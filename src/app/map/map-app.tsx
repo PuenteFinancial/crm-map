@@ -53,6 +53,8 @@ export function MapApp({ contacts, meetings, me, initialSelectedId, renderedAt, 
   const [locating, setLocating] = useState<string | null>(null);
   const [planOpen, setPlanOpen] = useState(false);
   const [listOpen, setListOpen] = useState(false);
+  // Plan/Nearby sheet shrunk to a bar so the map gets the screen.
+  const [sheetCollapsed, setSheetCollapsed] = useState(false);
   const plan = useDayPlan();
   const [saving, startSaving] = useTransition();
 
@@ -116,6 +118,7 @@ export function MapApp({ contacts, meetings, me, initialSelectedId, renderedAt, 
 
   function showNearby(anchor: Omit<NearbyAnchor, "radiusMi">) {
     setNearby({ ...anchor, radiusMi: nearby?.radiusMi ?? 3 });
+    setSheetCollapsed(false);
     setSelectedId(null);
     setPanelState("none");
   }
@@ -157,12 +160,16 @@ export function MapApp({ contacts, meetings, me, initialSelectedId, renderedAt, 
   }
 
   return (
-    <div className="relative h-dvh w-full overflow-hidden">
+    <div
+      className="relative h-dvh w-full overflow-hidden"
+      style={{ "--map-bottom-inset": sheetCollapsed && (planOpen || nearby) && !selected ? "76px" : "0px" } as React.CSSProperties}
+    >
       <MapView
         contacts={visible}
         selectedId={selectedId}
         nearby={nearby}
         route={planOpen ? plan.result : null}
+        sheetCollapsed={sheetCollapsed && (planOpen || nearby != null) && !selected}
         placing={placing != null}
         onSelect={(id) => {
           setSelectedId(id);
@@ -235,6 +242,7 @@ export function MapApp({ contacts, meetings, me, initialSelectedId, renderedAt, 
             <button
               onClick={() => {
                 setPlanOpen(true);
+                setSheetCollapsed(false);
                 setNearby(null);
                 setSelectedId(null);
               }}
@@ -375,6 +383,7 @@ export function MapApp({ contacts, meetings, me, initialSelectedId, renderedAt, 
           onOpenPlan={() => {
             setListOpen(false);
             setPlanOpen(true);
+            setSheetCollapsed(false);
           }}
         />
       )}
@@ -413,6 +422,8 @@ export function MapApp({ contacts, meetings, me, initialSelectedId, renderedAt, 
           meetings={meetings}
           onOpenContact={setSelectedId}
           onClose={() => setPlanOpen(false)}
+          collapsed={sheetCollapsed}
+          onCollapsedChange={setSheetCollapsed}
         />
       ) : (
         nearby &&
@@ -427,6 +438,8 @@ export function MapApp({ contacts, meetings, me, initialSelectedId, renderedAt, 
             isPicked={plan.has}
             onTogglePick={plan.toggle}
             onClose={() => setNearby(null)}
+            collapsed={sheetCollapsed}
+            onCollapsedChange={setSheetCollapsed}
           />
         )
       )}

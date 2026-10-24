@@ -1,6 +1,7 @@
 "use client";
 
 import "mapbox-gl/dist/mapbox-gl.css";
+import "./map-controls.css"; // after mapbox-gl.css so its overrides win
 import type { Feature, FeatureCollection, Point, Polygon } from "geojson";
 import type { GeoJSONSource } from "mapbox-gl";
 import { useEffect, useMemo, useRef } from "react";
@@ -23,6 +24,8 @@ type Props = {
   selectedId: string | null;
   nearby: NearbyAnchor | null;
   route: PlanResult | null;
+  /** The Plan/Nearby sheet is shrunk to a bar, so frame things using the whole screen. */
+  sheetCollapsed: boolean;
   placing: boolean;
   onSelect: (id: string | null) => void;
   onPlace: (lat: number, lng: number) => void;
@@ -39,7 +42,7 @@ function circle(lat: number, lng: number, meters: number): Feature<Polygon> {
   return { type: "Feature", geometry: { type: "Polygon", coordinates: [ring] }, properties: {} };
 }
 
-export default function MapView({ contacts, selectedId, nearby, route, placing, onSelect, onPlace }: Props) {
+export default function MapView({ contacts, selectedId, nearby, route, sheetCollapsed, placing, onSelect, onPlace }: Props) {
   const mapRef = useRef<MapRef>(null);
 
   const geojson = useMemo<FeatureCollection<Point>>(
@@ -80,6 +83,12 @@ export default function MapView({ contacts, selectedId, nearby, route, placing, 
     };
   }, [route]);
 
+  // Space the sheet takes up: a slim bar when collapsed, most of the screen when open.
+  function sheetPadding(w: number, h: number, openShare: number, panelWidth: number) {
+    if (w >= 768) return { top: 80, bottom: 40, left: 40, right: sheetCollapsed ? 60 : panelWidth };
+    return { top: 110, bottom: sheetCollapsed ? 100 : h * openShare + 10, left: 30, right: 30 };
+  }
+
   // Frame the whole route above the plan sheet (phones) or left of it (wider screens).
   useEffect(() => {
     const map = mapRef.current;
@@ -89,9 +98,10 @@ export default function MapView({ contacts, selectedId, nearby, route, placing, 
     const { clientWidth: w, clientHeight: h } = map.getContainer();
     map.fitBounds(
       [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
-      { padding: w < 768 ? { top: 110, bottom: h * 0.75 + 10, left: 30, right: 30 } : { top: 80, bottom: 40, left: 40, right: 470 }, maxZoom: 14 },
+      { padding: sheetPadding(w, h, 0.75, 470), maxZoom: 14 },
     );
-  }, [route]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refit only when the route or sheet changes
+  }, [route, sheetCollapsed]);
 
   // Frame the whole Nearby radius above the sheet (phones) or left of it (wider screens).
   useEffect(() => {
@@ -102,9 +112,10 @@ export default function MapView({ contacts, selectedId, nearby, route, placing, 
     const { clientWidth: w, clientHeight: h } = map.getContainer();
     map.fitBounds(
       [[nearby.lng - dLng, nearby.lat - dLat], [nearby.lng + dLng, nearby.lat + dLat]],
-      { padding: w < 768 ? { top: 110, bottom: h * 0.55 + 10, left: 20, right: 20 } : { top: 80, bottom: 40, left: 40, right: 440 } },
+      { padding: sheetPadding(w, h, 0.55, 440) },
     );
-  }, [nearby]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refit only when the radius or sheet changes
+  }, [nearby, sheetCollapsed]);
 
   // Keep the selected pin in the part of the map the contact sheet doesn't cover:
   // between the top bar + chips and the sheet on phones, left of the sheet on wider screens.

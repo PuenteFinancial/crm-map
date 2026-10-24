@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { PRIORITY_LABELS, type MapContact, type Meeting } from "@/lib/contacts";
 import { googleMapsLinks } from "@/lib/route";
 import { dayKey, formatDay, formatTime } from "@/lib/time";
+import { BottomSheet } from "./bottom-sheet";
 import { addPlace } from "./plan-actions";
 import { Dot } from "./ui";
 import type { DayPlanState } from "./use-day-plan";
@@ -14,33 +15,70 @@ type Props = {
   meetings: Meeting[];
   onOpenContact: (id: string) => void;
   onClose: () => void;
+  collapsed: boolean;
+  onCollapsedChange: (collapsed: boolean) => void;
 };
 
 const input = "rounded-lg border border-neutral-300 bg-white px-2 py-1.5 text-[16px]";
 const PRIORITY_RANK = { "must-see": 0, "want-to-see": 1, "if-nearby": 2 } as const;
 
-export function PlanSheet({ plan, contacts, meetings, onOpenContact, onClose }: Props) {
+export function PlanSheet({ plan, contacts, meetings, onOpenContact, onClose, collapsed, onCollapsedChange }: Props) {
   const [view, setView] = useState<"edit" | "pick">("edit");
   const byId = useMemo(() => new Map(contacts.map((c) => [c.id, c])), [contacts]);
   const dayMeetings = meetings.filter((m) => dayKey(m.starts_at) === plan.date);
   const picked = plan.picks.map((id) => byId.get(id)).filter((c): c is MapContact => c != null);
 
-  return (
-    <section className="absolute inset-x-0 bottom-0 z-10 flex max-h-[75dvh] flex-col rounded-t-2xl bg-white text-neutral-900 shadow-[0_-8px_30px_rgba(0,0,0,0.15)] md:inset-y-3 md:left-auto md:right-3 md:max-h-none md:w-[26rem] md:rounded-2xl">
-      <header className="flex items-center gap-2 border-b border-neutral-100 px-4 pb-3 pt-4">
-        <h2 className="text-lg font-semibold">Plan</h2>
-        <input
-          type="date"
-          value={plan.date}
-          onChange={(e) => e.target.value && plan.setDate(e.target.value)}
-          className={`${input} flex-1`}
-        />
-        <button onClick={onClose} className="rounded-full bg-neutral-100 px-2.5 py-1 text-sm" aria-label="Close">
-          ✕
-        </button>
-      </header>
+  const r = plan.result;
+  const firstLink = r ? googleMapsLinks(r.stops, Boolean(plan.settings?.start.here))[0] : null;
+  const next = r?.stops.find((st) => st.kind === "contact" || st.kind === "meeting");
+  const close = (
+    <button onClick={onClose} className="rounded-full bg-neutral-100 px-2.5 py-1 text-sm" aria-label="Close">
+      ✕
+    </button>
+  );
 
-      <div className="flex flex-col gap-4 overflow-y-auto px-4 py-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
+  const peek = collapsed ? (
+    <div className="flex items-center gap-2">
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-semibold">
+          {r
+            ? `${r.stops.filter((st) => st.kind === "contact" || st.kind === "meeting").length} stops · ${r.totalDriveMin} min driving`
+            : `Plan · ${picked.length} picked`}
+        </p>
+        <p className="truncate text-xs text-neutral-500">
+          {next ? `First: ${next.name} ${formatTime(next.kind === "meeting" && next.startsAt ? next.startsAt : next.arrive!)}` : formatDay(plan.date)}
+          {" · swipe up for details"}
+        </p>
+      </div>
+      {firstLink && (
+        <a href={firstLink.url} target="_blank" rel="noreferrer" className="shrink-0 rounded-full bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white">
+          🧭 Go
+        </a>
+      )}
+      {close}
+    </div>
+  ) : (
+    <div className="flex items-center gap-2">
+      <h2 className="text-lg font-semibold">Plan</h2>
+      <input
+        type="date"
+        value={plan.date}
+        onChange={(e) => e.target.value && plan.setDate(e.target.value)}
+        className={`${input} min-w-0 flex-1`}
+      />
+      {close}
+    </div>
+  );
+
+  return (
+    <BottomSheet
+      collapsed={collapsed}
+      onCollapsedChange={onCollapsedChange}
+      peek={peek}
+      maxHeight="max-h-[75dvh]"
+      desktopWidth="md:w-[26rem]"
+    >
+      <div className="flex flex-col gap-4 overflow-y-auto border-t border-neutral-100 px-4 py-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
         {view === "pick" ? (
           <ContactPicker plan={plan} contacts={contacts} onDone={() => setView("edit")} />
         ) : plan.result ? (
@@ -107,7 +145,7 @@ export function PlanSheet({ plan, contacts, meetings, onOpenContact, onClose }: 
           </>
         )}
       </div>
-    </section>
+    </BottomSheet>
   );
 }
 

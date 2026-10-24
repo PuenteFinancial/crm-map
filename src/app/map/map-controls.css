@@ -1,0 +1,6 @@
+/* Keep Mapbox's zoom/locate buttons above a collapsed bottom sheet (see --map-bottom-inset in map-app.tsx). */
+.mapboxgl-map .mapboxgl-ctrl-bottom-right,
+.mapboxgl-map .mapboxgl-ctrl-bottom-left {
+  bottom: var(--map-bottom-inset, 0px);
+  transition: bottom 0.2s;
+}

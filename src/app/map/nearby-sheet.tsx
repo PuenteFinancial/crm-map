@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { METERS_PER_MILE, PRIORITY_LABELS, distanceMeters, type MapContact } from "@/lib/contacts";
+import { BottomSheet } from "./bottom-sheet";
 import { Dot } from "./ui";
 
 export type NearbyAnchor = {
@@ -35,10 +36,13 @@ type Props = {
   isPicked: (id: string) => boolean;
   onTogglePick: (id: string) => void;
   onClose: () => void;
+  collapsed: boolean;
+  onCollapsedChange: (collapsed: boolean) => void;
 };
 
 export function NearbySheet(props: Props) {
   const { anchor, contacts, sortByPriority, onSortChange, onRadiusChange, onSelect, isPicked, onTogglePick, onClose } = props;
+  const { collapsed, onCollapsedChange } = props;
   const rows = useMemo(() => {
     const near = nearbyContacts(contacts, anchor);
     return sortByPriority
@@ -47,8 +51,12 @@ export function NearbySheet(props: Props) {
   }, [contacts, anchor, sortByPriority]);
 
   return (
-    <section className="absolute inset-x-0 bottom-0 z-10 flex max-h-[55dvh] flex-col rounded-t-2xl bg-white text-neutral-900 shadow-[0_-8px_30px_rgba(0,0,0,0.15)] md:inset-y-3 md:left-auto md:right-3 md:max-h-none md:w-96 md:rounded-2xl">
-      <div className="flex flex-col gap-3 border-b border-neutral-100 px-4 pb-3 pt-4">
+    <BottomSheet
+      collapsed={collapsed}
+      onCollapsedChange={onCollapsedChange}
+      maxHeight="max-h-[55dvh]"
+      desktopWidth="md:w-96"
+      peek={
         <header className="flex items-start gap-3">
           <div className="flex-1">
             <h2 className="text-lg font-semibold leading-tight">Near {anchor.label}</h2>
@@ -63,6 +71,9 @@ export function NearbySheet(props: Props) {
             ✕
           </button>
         </header>
+      }
+    >
+      <div className="flex flex-col gap-3 border-b border-neutral-100 px-4 pb-3">
         <div className="flex items-center gap-1.5 overflow-x-auto">
           {RADII_MI.map((r) => (
             <button
@@ -115,6 +126,6 @@ export function NearbySheet(props: Props) {
           </li>
         ))}
       </ul>
-    </section>
+    </BottomSheet>
   );
 }
