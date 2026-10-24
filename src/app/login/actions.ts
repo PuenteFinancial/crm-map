@@ -16,6 +16,13 @@ async function isTeamMember(email: string) {
   return data !== null;
 }
 
+// Public sign-up is off (anyone with the publishable key could otherwise register a
+// team email with a password), so team members' auth users are created here instead.
+async function ensureUser(email: string) {
+  const { error } = await createAdminClient().auth.admin.createUser({ email, email_confirm: true });
+  if (error && error.code !== "email_exists") throw error;
+}
+
 export async function sendCode(_prev: LoginState, form: FormData): Promise<LoginState> {
   const email = String(form.get("email") ?? "").trim().toLowerCase();
   if (!email) return { step: "email", error: "Enter your email." };
@@ -24,11 +31,13 @@ export async function sendCode(_prev: LoginState, form: FormData): Promise<Login
     return { step: "email", email, error: "That email isn't on the team list." };
   }
 
+  await ensureUser(email);
+
   const origin = (await headers()).get("origin");
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithOtp({
     email,
-    options: { emailRedirectTo: `${origin}/auth/confirm` },
+    options: { emailRedirectTo: `${origin}/auth/confirm`, shouldCreateUser: false },
   });
   if (error) return { step: "email", email, error: error.message };
 

@@ -15,6 +15,7 @@ Contacts on a map, "who's near this meeting?", and optimized day routes for the 
    insert into team_members (email, name) values ('<colton email>', 'colton');
    ```
 4. Auth settings (Supabase → Authentication):
+   - **Sign In / Providers**: turn **off** "Allow new users to sign up" and keep "Confirm email" on. The app creates team members' accounts itself, so public sign-up stays closed (otherwise anyone with the publishable key could register a team email).
    - **URL Configuration**: set Site URL to `http://localhost:3000` (later the Vercel URL) and add `http://localhost:3000/auth/confirm` to Redirect URLs.
    - **Email Templates → Magic Link**: include the code and a cross-browser link, so sign-in works from a home-screen app:
      ```html
