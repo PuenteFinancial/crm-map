@@ -24,7 +24,7 @@ export default function LoginPage() {
       </div>
 
       {onCodeStep ? (
-        <form action={codeAction} className="flex flex-col gap-3">
+        <form key="code" action={codeAction} className="flex flex-col gap-3">
           <input type="hidden" name="email" value={emailState.email} />
           <input
             name="code"
@@ -42,7 +42,7 @@ export default function LoginPage() {
           </button>
         </form>
       ) : (
-        <form action={emailAction} className="flex flex-col gap-3">
+        <form key="email" action={emailAction} className="flex flex-col gap-3">
           <input
             name="email"
             type="email"

@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "./login/actions";
@@ -19,6 +20,8 @@ export default function Home() {
 }
 
 async function Summary() {
+  // getClaims() checks token expiry against the clock, so this must render per request.
+  await connection();
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   const { count } = await supabase.from("contacts").select("*", { count: "exact", head: true });
