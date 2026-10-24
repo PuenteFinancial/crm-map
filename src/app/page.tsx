@@ -1,42 +1,64 @@
-import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
+import { CONTACT_COLUMNS, type MapContact } from "@/lib/contacts";
 import { createClient } from "@/lib/supabase/server";
-import { signOut } from "./login/actions";
+import type { Owner } from "@/lib/types";
+import { MapApp } from "./map/map-app";
 
-export default function Home() {
+export default function Home({ searchParams }: PageProps<"/">) {
   return (
-    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-4 px-4 py-8">
-      <header className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">crm-map</h1>
-        <form action={signOut}>
-          <button className="text-sm text-neutral-500 underline">Sign out</button>
-        </form>
-      </header>
-      <Suspense fallback={<p className="text-sm text-neutral-500">Loading…</p>}>
-        <Summary />
-      </Suspense>
-    </main>
+    <Suspense fallback={<div className="flex flex-1 items-center justify-center text-sm text-neutral-500">Loading map…</div>}>
+      <MapData searchParams={searchParams} />
+    </Suspense>
   );
 }
 
-async function Summary() {
+async function MapData({ searchParams }: Pick<PageProps<"/">, "searchParams">) {
   // getClaims() checks token expiry against the clock, so this must render per request.
   await connection();
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
-  const { count } = await supabase.from("contacts").select("*", { count: "exact", head: true });
 
+  const [contactsRes, visitsRes, meRes] = await Promise.all([
+    supabase.from("contacts_located").select(CONTACT_COLUMNS).order("name"),
+    supabase.from("visits").select("contact_id, status, starts_at"),
+    supabase.from("team_members").select("name").ilike("email", String(claims?.claims.email ?? "")).maybeSingle(),
+  ]);
+  if (contactsRes.error) throw contactsRes.error;
+  if (visitsRes.error) throw visitsRes.error;
+
+  const { lastVisit, nextMeeting } = rollUpVisits(visitsRes.data);
+
+  const contacts = (contactsRes.data as unknown as Omit<MapContact, "last_visit_at" | "next_meeting_at">[]).map((c) => ({
+    ...c,
+    last_visit_at: lastVisit.get(c.id) ?? null,
+    next_meeting_at: nextMeeting.get(c.id) ?? null,
+  }));
+
+  const selected = (await searchParams).c;
   return (
-    <>
-      <p className="text-sm text-neutral-500">Signed in as {claims?.claims.email}</p>
-      <p>{count ?? 0} contacts. The map is coming next.</p>
-      <Link
-        href="/add"
-        className="rounded-lg bg-neutral-900 px-3 py-3 text-center font-medium text-white dark:bg-white dark:text-neutral-900"
-      >
-        Add contact
-      </Link>
-    </>
+    <MapApp
+      contacts={contacts}
+      me={(meRes.data?.name as Owner | undefined) ?? null}
+      initialSelectedId={typeof selected === "string" ? selected : null}
+    />
   );
+}
+
+type VisitStub = { contact_id: string; status: string; starts_at: string | null };
+
+// Per contact: most recent completed visit and soonest upcoming meeting.
+function rollUpVisits(visits: VisitStub[]) {
+  const now = Date.now();
+  const lastVisit = new Map<string, string>();
+  const nextMeeting = new Map<string, string>();
+  for (const v of visits) {
+    if (!v.starts_at) continue;
+    if (v.status === "done" && v.starts_at > (lastVisit.get(v.contact_id) ?? "")) lastVisit.set(v.contact_id, v.starts_at);
+    if (v.status === "scheduled" && Date.parse(v.starts_at) > now) {
+      const current = nextMeeting.get(v.contact_id);
+      if (!current || v.starts_at < current) nextMeeting.set(v.contact_id, v.starts_at);
+    }
+  }
+  return { lastVisit, nextMeeting };
 }
