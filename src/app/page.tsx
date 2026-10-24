@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
@@ -30,6 +31,12 @@ async function Summary() {
     <>
       <p className="text-sm text-neutral-500">Signed in as {claims?.claims.email}</p>
       <p>{count ?? 0} contacts. The map is coming next.</p>
+      <Link
+        href="/add"
+        className="rounded-lg bg-neutral-900 px-3 py-3 text-center font-medium text-white dark:bg-white dark:text-neutral-900"
+      >
+        Add contact
+      </Link>
     </>
   );
 }

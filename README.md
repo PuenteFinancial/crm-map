@@ -26,3 +26,18 @@ Contacts on a map, "who's near this meeting?", and optimized day routes for the 
 5. `npm install && npm run dev`, then open http://localhost:3000.
 
 Only emails in `team_members` can request a sign-in code, and row-level security limits every table to those emails.
+
+## Adding contacts
+
+Every source goes through `ingestContact` in [src/lib/ingest.ts](src/lib/ingest.ts): normalize → dedupe (search-brain slug, email, LinkedIn URL, then name + company) → geocode with Mapbox → insert. Contacts with no usable location (none, or only a state/country) are saved with `needs_review` so you can drop a pin later. A contact without its own address shows at its company's location.
+
+- **Quick add**: `/add` in the app. "Use my location" pins the contact where you're standing.
+- **Agents / Claude Code**: `POST /api/ingest` with `Authorization: Bearer $INGEST_API_TOKEN`:
+  ```bash
+  curl -X POST http://localhost:3000/api/ingest \
+    -H "Authorization: Bearer $INGEST_API_TOKEN" -H "content-type: application/json" \
+    -d '{"contacts":[{"name":"Jane Doe","company":"Acme Imports","address":"Vernon, CA","category":"supply-chain"}],"on_duplicate":"skip"}'
+  ```
+  `on_duplicate`: `skip` (default, report and stop), `merge` (fill the existing record's empty fields), `force` (add even if the name matches).
+- **Search-brain import**: `npm run import:brain` (reads `~/Work/search-brain`; safe to re-run).
+- **Geocode backfill**: `npm run geocode:missing` geocodes anything saved with an address but no pin.

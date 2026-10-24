@@ -2,7 +2,8 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { supabasePublishableKey, supabaseUrl } from "./env";
 
-const PUBLIC_PATHS = ["/login", "/auth"];
+// /api/ingest checks its own bearer token.
+const PUBLIC_PATHS = ["/login", "/auth", "/api/ingest"];
 
 // Refreshes the auth cookie on every request and sends signed-out users to /login.
 export async function updateSession(request: NextRequest) {
