@@ -107,7 +107,7 @@ export default function MapView({ contacts, selectedId, nearby, route, placing, 
   }, [nearby]);
 
   // Keep the selected pin in the part of the map the contact sheet doesn't cover:
-  // the top ~40% on phones (sheet is at the bottom), the left side on wider screens (sheet is on the right).
+  // between the top bar + chips and the sheet on phones, left of the sheet on wider screens.
   useEffect(() => {
     const c = contacts.find((x) => x.id === selectedId);
     const map = mapRef.current;
@@ -116,8 +116,8 @@ export default function MapView({ contacts, selectedId, nearby, route, placing, 
     const phone = w < 768;
     const point = map.project([c.map_lng, c.map_lat]);
     const visible = phone
-      ? point.y > 70 && point.y < h * 0.4 && point.x > 0 && point.x < w
-      : point.x > 0 && point.x < w - 400 && point.y > 70 && point.y < h;
+      ? point.y > 140 && point.y < h * 0.4 && point.x > 0 && point.x < w
+      : point.x > 0 && point.x < w - 400 && point.y > 140 && point.y < h;
     if (visible) return;
     map.easeTo({
       center: [c.map_lng, c.map_lat],

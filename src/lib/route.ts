@@ -140,6 +140,53 @@ export async function planDay(
     gaps[rankGaps(c, 0)[0]].push(c);
   }
 
+  // Least-detour placement ignores time, so an hour before a 10am meeting can sit empty while
+  // nearby stops pile up in the afternoon. Pull stops forward into gaps with spare time, judged by
+  // a rough straight-line estimate; the real routing below bumps anything that doesn't fit.
+  const ROAD_FACTOR = 1.4; // road distance vs straight line in LA
+  const AVG_SPEED = 8; // m/s, about 18 mph: err slow so the estimate rarely overfills a gap
+  const estMs = (g: number, stops: PlanContact[]) => {
+    const to = gapEnd(g);
+    const base = to ? distanceMeters(anchors[g], to) : 0;
+    const meters = base + stops.reduce((s, c) => s + detour(anchors[g], c, to), 0);
+    return (meters * ROAD_FACTOR) / AVG_SPEED * 1000 + dwell * stops.length;
+  };
+  const gapAvailable = (g: number) => (gapEnd(g)?.arriveBy ?? dayEnd) - anchors[g].departAt;
+  const leastImportant = (g: number) =>
+    [...gaps[g]].sort(
+      (a, b) =>
+        PRIORITY_RANK[b.priority] - PRIORITY_RANK[a.priority] ||
+        detour(anchors[g], b, gapEnd(g)) - detour(anchors[g], a, gapEnd(g)),
+    )[0];
+  for (let g = 0; g < gapCount; g++) {
+    // First move out what clearly won't fit (least important first), so it can't block the
+    // nearer stops that would.
+    while (gaps[g].length > 0 && estMs(g, gaps[g]) > gapAvailable(g)) {
+      const victim = leastImportant(g);
+      const later = rankGaps(victim, g + 1)[0];
+      if (later === undefined) break; // last gap: the routing below drops what doesn't fit
+      gaps[g] = gaps[g].filter((c) => c !== victim);
+      gaps[later].push(victim);
+    }
+    if (g === gapCount - 1) break;
+    // Then fill spare time with the stops that add the least driving.
+    for (;;) {
+      let best: { from: number; c: PlanContact; extra: number } | null = null;
+      for (let h = g + 1; h < gapCount; h++) {
+        for (const c of gaps[h]) {
+          const extra = detour(anchors[g], c, gapEnd(g)) - detour(anchors[h], c, gapEnd(h));
+          // Only worth it when it fits and doesn't add much driving compared to where it is now.
+          if (extra < 8000 && (!best || extra < best.extra) && estMs(g, [...gaps[g], c]) <= gapAvailable(g)) {
+            best = { from: h, c, extra };
+          }
+        }
+      }
+      if (!best) break;
+      gaps[best.from] = gaps[best.from].filter((x) => x !== best!.c);
+      gaps[g].push(best.c);
+    }
+  }
+
   // Order each gap in turn. A stop that doesn't fit before the next fixed time moves to its
   // best later gap; it's only dropped when no later gap is left.
   const ordered: { anchor: Anchor; stops: PlanContact[] }[] = [];
