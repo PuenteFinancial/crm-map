@@ -9,6 +9,7 @@ import { signOut } from "../login/actions";
 import { setPin } from "./actions";
 import { AgendaPanel, meetingLocation } from "./agenda-panel";
 import { ContactSheet } from "./contact-sheet";
+import { ListView } from "./list-view";
 import { NearbySheet, type NearbyAnchor } from "./nearby-sheet";
 import { PlanSheet } from "./plan-sheet";
 import { useDayPlan } from "./use-day-plan";
@@ -48,6 +49,7 @@ export function MapApp({ contacts, meetings, me, initialSelectedId }: MapAppProp
   const [nearbyByPriority, setNearbyByPriority] = useState(false);
   const [locating, setLocating] = useState<string | null>(null);
   const [planOpen, setPlanOpen] = useState(false);
+  const [listOpen, setListOpen] = useState(false);
   const plan = useDayPlan();
   const [saving, startSaving] = useTransition();
 
@@ -78,13 +80,19 @@ export function MapApp({ contacts, meetings, me, initialSelectedId }: MapAppProp
     [contacts, filters],
   );
 
+  const listed = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? visible.filter((c) => c.name.toLowerCase().includes(q) || c.company_name?.toLowerCase().includes(q)) : visible;
+  }, [visible, query]);
+
   const searchResults = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return [];
+    // In the list, the search box filters the list itself.
+    if (!q || listOpen) return [];
     return contacts
       .filter((c) => c.name.toLowerCase().includes(q) || c.company_name?.toLowerCase().includes(q))
       .slice(0, 8);
-  }, [contacts, query]);
+  }, [contacts, query, listOpen]);
 
   const byId = useMemo(() => new Map(contacts.map((c) => [c.id, c])), [contacts]);
   const needsPin = contacts.filter((c) => c.needs_review);
@@ -161,13 +169,13 @@ export function MapApp({ contacts, meetings, me, initialSelectedId }: MapAppProp
       />
 
       {/* Top bar */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-col gap-2 p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-col gap-2 p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <div className="pointer-events-auto flex gap-2">
           <div className="relative flex-1">
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder={`Search ${contacts.length} contacts`}
+              placeholder={listOpen ? "Search list" : `Search ${contacts.length} contacts`}
               className="w-full rounded-xl border border-neutral-200 bg-white/95 px-3 py-2.5 text-[16px] text-neutral-900 shadow-sm backdrop-blur"
             />
             {searchResults.length > 0 && (
@@ -193,6 +201,18 @@ export function MapApp({ contacts, meetings, me, initialSelectedId }: MapAppProp
               </ul>
             )}
           </div>
+          <BarButton
+            active={listOpen}
+            onClick={() => {
+              setListOpen(!listOpen);
+              setPanelState("none");
+              setSelectedId(null);
+              setPlanOpen(false);
+              setNearby(null);
+            }}
+          >
+            {listOpen ? "Map" : "List"}
+          </BarButton>
           <BarButton active={panel === "filters" || activeFilterCount > 0} onClick={() => setPanel(panel === "filters" ? "none" : "filters")}>
             Filter{activeFilterCount > 0 && ` · ${activeFilterCount}`}
           </BarButton>
@@ -201,7 +221,7 @@ export function MapApp({ contacts, meetings, me, initialSelectedId }: MapAppProp
           </BarButton>
         </div>
 
-        {panel === "none" && !placing && (
+        {panel === "none" && !placing && !listOpen && (
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setPanel("agenda")}
@@ -333,6 +353,23 @@ export function MapApp({ contacts, meetings, me, initialSelectedId }: MapAppProp
           </Panel>
         )}
       </div>
+
+      {listOpen && (
+        <ListView
+          contacts={listed}
+          total={contacts.length}
+          plan={plan}
+          onOpen={(id) => {
+            setListOpen(false);
+            setQuery("");
+            setSelectedId(id);
+          }}
+          onOpenPlan={() => {
+            setListOpen(false);
+            setPlanOpen(true);
+          }}
+        />
+      )}
 
       {placing && (
         <div className="absolute inset-x-3 bottom-[max(1rem,env(safe-area-inset-bottom))] flex items-center gap-3 rounded-xl bg-neutral-900 px-4 py-3 text-white shadow-lg">

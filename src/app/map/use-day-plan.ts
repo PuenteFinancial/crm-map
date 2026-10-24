@@ -59,6 +59,12 @@ export function useDayPlan() {
       setPicks(next);
       persist(next, settings);
     },
+    /** Add (or remove) several contacts at once, keeping the existing order. */
+    setMany(ids: string[], on: boolean) {
+      const next = on ? [...picks, ...ids.filter((id) => !picks.includes(id))] : picks.filter((p) => !ids.includes(p));
+      setPicks(next);
+      persist(next, settings);
+    },
     updateSettings(patch: Partial<PlanSettings>) {
       const next = { ...DEFAULTS, ...settings, ...patch } as PlanSettings;
       setSettings(next);
