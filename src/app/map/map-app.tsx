@@ -10,6 +10,8 @@ import { setPin } from "./actions";
 import { AgendaPanel, meetingLocation } from "./agenda-panel";
 import { ContactSheet } from "./contact-sheet";
 import { NearbySheet, type NearbyAnchor } from "./nearby-sheet";
+import { PlanSheet } from "./plan-sheet";
+import { useDayPlan } from "./use-day-plan";
 import { Dot } from "./ui";
 
 // mapbox-gl touches window on import.
@@ -45,6 +47,8 @@ export function MapApp({ contacts, meetings, me, initialSelectedId }: MapAppProp
   const [nearby, setNearby] = useState<NearbyAnchor | null>(null);
   const [nearbyByPriority, setNearbyByPriority] = useState(false);
   const [locating, setLocating] = useState<string | null>(null);
+  const [planOpen, setPlanOpen] = useState(false);
+  const plan = useDayPlan();
   const [saving, startSaving] = useTransition();
 
   // Keep ?c= in the URL so a selected contact survives reloads and can be shared between you two.
@@ -147,6 +151,7 @@ export function MapApp({ contacts, meetings, me, initialSelectedId }: MapAppProp
         contacts={visible}
         selectedId={selectedId}
         nearby={nearby}
+        route={planOpen ? plan.result : null}
         placing={placing != null}
         onSelect={(id) => {
           setSelectedId(id);
@@ -203,6 +208,16 @@ export function MapApp({ contacts, meetings, me, initialSelectedId }: MapAppProp
               className="pointer-events-auto rounded-full bg-white px-3 py-1.5 text-sm font-medium text-neutral-900 shadow-sm"
             >
               📅 {meetings.length} upcoming
+            </button>
+            <button
+              onClick={() => {
+                setPlanOpen(true);
+                setNearby(null);
+                setSelectedId(null);
+              }}
+              className="pointer-events-auto rounded-full bg-white px-3 py-1.5 text-sm font-medium text-neutral-900 shadow-sm"
+            >
+              🗺 Plan{plan.picks.length > 0 && ` · ${plan.picks.length}`}
             </button>
             <button
               onClick={nearMe}
@@ -338,8 +353,21 @@ export function MapApp({ contacts, meetings, me, initialSelectedId }: MapAppProp
             setNearby(null);
           }}
           onPlacePin={() => setPlacingId(selected.id)}
-          onNearby={() => nearContact(selected)}
-          onBack={nearby ? () => setSelectedId(null) : undefined}
+          onNearby={() => {
+            setPlanOpen(false);
+            nearContact(selected);
+          }}
+          inPlan={plan.has(selected.id)}
+          onTogglePlan={() => plan.toggle(selected.id)}
+          onBack={nearby || planOpen ? () => setSelectedId(null) : undefined}
+        />
+      ) : planOpen && !placing ? (
+        <PlanSheet
+          plan={plan}
+          contacts={contacts}
+          meetings={meetings}
+          onOpenContact={setSelectedId}
+          onClose={() => setPlanOpen(false)}
         />
       ) : (
         nearby &&
@@ -351,6 +379,8 @@ export function MapApp({ contacts, meetings, me, initialSelectedId }: MapAppProp
             onSortChange={setNearbyByPriority}
             onRadiusChange={(radiusMi) => setNearby({ ...nearby, radiusMi })}
             onSelect={setSelectedId}
+            isPicked={plan.has}
+            onTogglePick={plan.toggle}
             onClose={() => setNearby(null)}
           />
         )

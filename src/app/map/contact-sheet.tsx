@@ -20,13 +20,15 @@ type Props = {
   onClose: () => void;
   onPlacePin: () => void;
   onNearby: () => void;
+  inPlan: boolean;
+  onTogglePlan: () => void;
   /** Shown when the sheet was opened from the Nearby list. */
   onBack?: () => void;
 };
 
 type Mode = { kind: "none" } | { kind: "log"; completing?: Visit } | { kind: "schedule" };
 
-export function ContactSheet({ contact: c, me, onClose, onPlacePin, onNearby, onBack }: Props) {
+export function ContactSheet({ contact: c, me, onClose, onPlacePin, onNearby, inPlan, onTogglePlan, onBack }: Props) {
   const [visits, setVisits] = useState<Visit[] | null>(null);
   const [mode, setMode] = useState<Mode>({ kind: "none" });
   // Bumped after any visit change so history refetches.
@@ -78,7 +80,7 @@ export function ContactSheet({ contact: c, me, onClose, onPlacePin, onNearby, on
 
       <div className="flex flex-col gap-4 overflow-y-auto px-4 pb-[max(1rem,env(safe-area-inset-bottom))] md:pt-4">
         {onBack && (
-          <button onClick={onBack} className="self-start text-sm text-blue-600">← Back to nearby</button>
+          <button onClick={onBack} className="self-start text-sm text-blue-600">← Back</button>
         )}
         <header className="flex items-start gap-3">
           <div className="flex-1">
@@ -143,7 +145,7 @@ export function ContactSheet({ contact: c, me, onClose, onPlacePin, onNearby, on
         ) : mode.kind === "schedule" ? (
           <ScheduleMeetingForm contact={c} me={me} onDone={finish} />
         ) : (
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-4 gap-2">
             <button
               onClick={() => {
                 setMode({ kind: "log" });
@@ -168,6 +170,15 @@ export function ContactSheet({ contact: c, me, onClose, onPlacePin, onNearby, on
               className="rounded-xl border border-neutral-300 py-3 text-sm font-medium disabled:opacity-40"
             >
               Nearby
+            </button>
+            <button
+              onClick={onTogglePlan}
+              disabled={!hasPin}
+              className={`rounded-xl border py-3 text-sm font-medium disabled:opacity-40 ${
+                inPlan ? "border-green-600 bg-green-50 text-green-800" : "border-neutral-300"
+              }`}
+            >
+              {inPlan ? "✓ Plan" : "＋ Plan"}
             </button>
           </div>
         )}

@@ -32,10 +32,13 @@ type Props = {
   onSortChange: (byPriority: boolean) => void;
   onRadiusChange: (mi: number) => void;
   onSelect: (id: string) => void;
+  isPicked: (id: string) => boolean;
+  onTogglePick: (id: string) => void;
   onClose: () => void;
 };
 
-export function NearbySheet({ anchor, contacts, sortByPriority, onSortChange, onRadiusChange, onSelect, onClose }: Props) {
+export function NearbySheet(props: Props) {
+  const { anchor, contacts, sortByPriority, onSortChange, onRadiusChange, onSelect, isPicked, onTogglePick, onClose } = props;
   const rows = useMemo(() => {
     const near = nearbyContacts(contacts, anchor);
     return sortByPriority
@@ -82,10 +85,10 @@ export function NearbySheet({ anchor, contacts, sortByPriority, onSortChange, on
           </li>
         )}
         {rows.map(({ contact: c, meters }) => (
-          <li key={c.id}>
+          <li key={c.id} className="flex items-center gap-1">
             <button
               onClick={() => onSelect(c.id)}
-              className="flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left hover:bg-neutral-50"
+              className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-2.5 text-left hover:bg-neutral-50"
             >
               <Dot category={c.category} />
               <span className="flex min-w-0 flex-1 flex-col">
@@ -99,6 +102,15 @@ export function NearbySheet({ anchor, contacts, sortByPriority, onSortChange, on
               <span className="shrink-0 text-sm tabular-nums text-neutral-600">
                 {(meters / METERS_PER_MILE).toFixed(meters < METERS_PER_MILE ? 1 : 0)} mi
               </span>
+            </button>
+            <button
+              onClick={() => onTogglePick(c.id)}
+              aria-label={isPicked(c.id) ? `Remove ${c.name} from plan` : `Add ${c.name} to plan`}
+              className={`shrink-0 rounded-full border px-2.5 py-1 text-sm ${
+                isPicked(c.id) ? "border-green-600 bg-green-50 text-green-800" : "border-neutral-300"
+              }`}
+            >
+              {isPicked(c.id) ? "✓" : "＋"}
             </button>
           </li>
         ))}

@@ -13,6 +13,7 @@ import Map, {
   type MapRef,
 } from "react-map-gl/mapbox";
 import { CATEGORY_COLORS, METERS_PER_MILE, type MapContact } from "@/lib/contacts";
+import type { PlanResult } from "@/lib/route";
 import type { NearbyAnchor } from "./nearby-sheet";
 
 const LA = { longitude: -118.2437, latitude: 34.0522, zoom: 9.5 };
@@ -21,6 +22,7 @@ type Props = {
   contacts: MapContact[];
   selectedId: string | null;
   nearby: NearbyAnchor | null;
+  route: PlanResult | null;
   placing: boolean;
   onSelect: (id: string | null) => void;
   onPlace: (lat: number, lng: number) => void;
@@ -37,7 +39,7 @@ function circle(lat: number, lng: number, meters: number): Feature<Polygon> {
   return { type: "Feature", geometry: { type: "Polygon", coordinates: [ring] }, properties: {} };
 }
 
-export default function MapView({ contacts, selectedId, nearby, placing, onSelect, onPlace }: Props) {
+export default function MapView({ contacts, selectedId, nearby, route, placing, onSelect, onPlace }: Props) {
   const mapRef = useRef<MapRef>(null);
 
   const geojson = useMemo<FeatureCollection<Point>>(
@@ -60,6 +62,36 @@ export default function MapView({ contacts, selectedId, nearby, placing, onSelec
     }),
     [contacts],
   );
+
+  const routeStops = useMemo<FeatureCollection<Point>>(() => {
+    let n = 0;
+    return {
+      type: "FeatureCollection",
+      features: (route?.stops ?? [])
+        .filter((s) => s.kind !== "end")
+        .map((s) => ({
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [s.lng, s.lat] },
+          properties: {
+            kind: s.kind,
+            label: s.kind === "start" ? "▶" : String(++n),
+          },
+        })),
+    };
+  }, [route]);
+
+  // Frame the whole route above the plan sheet (phones) or left of it (wider screens).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!route || !map || route.geometry.length === 0) return;
+    const lngs = route.geometry.map((c) => c[0]);
+    const lats = route.geometry.map((c) => c[1]);
+    const { clientWidth: w, clientHeight: h } = map.getContainer();
+    map.fitBounds(
+      [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+      { padding: w < 768 ? { top: 110, bottom: h * 0.75 + 10, left: 30, right: 30 } : { top: 80, bottom: 40, left: 40, right: 470 }, maxZoom: 14 },
+    );
+  }, [route]);
 
   // Frame the whole Nearby radius above the sheet (phones) or left of it (wider screens).
   useEffect(() => {
@@ -127,6 +159,17 @@ export default function MapView({ contacts, selectedId, nearby, placing, onSelec
     >
       <GeolocateControl position="bottom-right" trackUserLocation showUserHeading />
       <NavigationControl position="bottom-right" showCompass={false} />
+
+      {route && route.geometry.length > 0 && (
+        <Source
+          id="route"
+          type="geojson"
+          data={{ type: "Feature", geometry: { type: "LineString", coordinates: route.geometry }, properties: {} }}
+        >
+          <Layer id="route-casing" type="line" layout={{ "line-join": "round", "line-cap": "round" }} paint={{ "line-color": "#ffffff", "line-width": 7 }} />
+          <Layer id="route-line" type="line" layout={{ "line-join": "round", "line-cap": "round" }} paint={{ "line-color": "#111827", "line-width": 4 }} />
+        </Source>
+      )}
 
       {nearby && (
         <Source id="nearby" type="geojson" data={circle(nearby.lat, nearby.lng, nearby.radiusMi * METERS_PER_MILE)}>
@@ -216,6 +259,32 @@ export default function MapView({ contacts, selectedId, nearby, placing, onSelec
           }}
         />
       </Source>
+
+      {route && (
+        <Source id="route-stops" type="geojson" data={routeStops}>
+          <Layer
+            id="route-stops"
+            type="circle"
+            paint={{
+              "circle-radius": 11,
+              "circle-color": ["match", ["get", "kind"], "meeting", "#facc15", "start", "#2563eb", "#111827"],
+              "circle-stroke-color": "#ffffff",
+              "circle-stroke-width": 2,
+            }}
+          />
+          <Layer
+            id="route-stop-labels"
+            type="symbol"
+            layout={{
+              "text-field": ["get", "label"],
+              "text-font": ["DIN Offc Pro Medium", "Arial Unicode MS Bold"],
+              "text-size": 12,
+              "text-allow-overlap": true,
+            }}
+            paint={{ "text-color": ["match", ["get", "kind"], "meeting", "#111827", "#ffffff"] }}
+          />
+        </Source>
+      )}
     </Map>
   );
 }
