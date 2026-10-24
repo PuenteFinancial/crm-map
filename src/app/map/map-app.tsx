@@ -317,7 +317,7 @@ export function MapApp({ contacts, meetings, me, initialSelectedId }: MapAppProp
 
         {panel === "menu" && (
           <Panel>
-            <Link href="/add" className="rounded-lg px-2 py-2 font-medium hover:bg-neutral-50">＋ Add contact</Link>
+            <Link href="/add" className="rounded-lg px-2 py-2 font-medium hover:bg-neutral-50">＋ Add contacts (paste, photo, CSV)</Link>
             <form action={signOut}>
               <button className="w-full rounded-lg px-2 py-2 text-left text-neutral-500 hover:bg-neutral-50">Sign out</button>
             </form>

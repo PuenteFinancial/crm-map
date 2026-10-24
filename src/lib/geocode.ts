@@ -10,13 +10,19 @@ export type GeocodeResult = {
   placeName: string;
 };
 
+type MatchLevel = "matched" | "unmatched" | "plausible" | "inferred" | "not_applicable";
+
 type MapboxFeature = {
   geometry: { coordinates: [number, number] };
   properties: {
     feature_type: string;
     full_address?: string;
     name?: string;
-    match_code?: { confidence?: "exact" | "high" | "medium" | "low" };
+    match_code?: {
+      confidence?: "exact" | "high" | "medium" | "low";
+      address_number?: MatchLevel;
+      street?: MatchLevel;
+    };
   };
 };
 
@@ -46,24 +52,41 @@ export async function geocode(query: string): Promise<GeocodeResult | null> {
   return {
     lat,
     lng,
-    confidence: toConfidence(feature),
+    confidence: toConfidence(feature, q),
     placeName: feature.properties.full_address ?? feature.properties.name ?? q,
   };
 }
 
-function toConfidence(feature: MapboxFeature): GeocodeConfidence {
-  const match = feature.properties.match_code?.confidence;
-  if (match === "low") return "low";
-  switch (feature.properties.feature_type) {
+const GENERIC_STREET_WORDS = new Set([
+  "street", "road", "avenue", "boulevard", "drive", "lane", "place", "court", "way", "highway",
+  "north", "south", "east", "west",
+]);
+
+// Mapbox sometimes answers a street it can't find with some other street. Only trust a
+// street-level result if a distinctive word of its name appears in what was searched.
+function streetNameMatches(name: string | undefined, query: string) {
+  if (!name) return false;
+  const q = query.toLowerCase();
+  const words = name.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !GENERIC_STREET_WORDS.has(w));
+  return words.some((w) => q.includes(w));
+}
+
+function toConfidence(feature: MapboxFeature, query: string): GeocodeConfidence {
+  const { feature_type: type, match_code: match, name } = feature.properties;
+  switch (type) {
     case "address":
-      return match === "medium" ? "street" : "exact";
-    case "street":
+      // A "plausible" house number on a matched street is placed by interpolation along that
+      // street, so it's close enough to drive to even though Mapbox rates the match low.
+      if (match?.street === "unmatched") return "low";
+      if (match?.address_number === "matched" && match.confidence !== "low") return "exact";
       return "street";
+    case "street":
+      return streetNameMatches(name, query) && match?.confidence !== "low" ? "street" : "low";
     case "neighborhood":
     case "locality":
     case "place":
     case "postcode":
-      return "city";
+      return match?.confidence === "low" ? "low" : "city";
     default: // district, region, country
       return "low";
   }

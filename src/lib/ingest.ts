@@ -164,6 +164,45 @@ async function findDuplicate(db: SupabaseClient, c: z.output<typeof contactInput
   return data?.[0] ? { row: data[0], matchedOn: "name" as const } : null;
 }
 
+export type ContactPreview = {
+  duplicate: { id: string; name: string; matchedOn: "brain_slug" | "email" | "linkedin" | "name" } | null;
+  /** Where the contact would land on the map, without saving anything. */
+  location: { placeName: string; confidence: GeocodeConfidence; viaCompany: boolean } | null;
+};
+
+/** Dry run of ingestContact: the duplicate it would hit and where it would be placed. Writes nothing. */
+export async function previewContact(db: SupabaseClient, raw: ContactInput): Promise<ContactPreview> {
+  const parsed = contactInputSchema.safeParse(raw);
+  if (!parsed.success) return { duplicate: null, location: null };
+  const c = { ...parsed.data, email: normalizeEmail(parsed.data.email), linkedin: normalizeLinkedin(parsed.data.linkedin) };
+
+  let company: { id: string; lat: number | null; address: string | null } | null = null;
+  if (c.company) {
+    const { data, error } = await db
+      .from("companies").select("id, lat, address").ilike("name", escapeLike(c.company)).limit(1);
+    if (error) throw error;
+    company = data?.[0] ?? null;
+  }
+
+  const dup = await findDuplicate(db, c, company?.id ?? null);
+
+  let location: ContactPreview["location"] = null;
+  const own = c.address ? await geocode(c.address).catch(() => null) : null;
+  if (own) {
+    location = { placeName: own.placeName, confidence: own.confidence, viaCompany: false };
+  } else if (c.company_address) {
+    const hit = await geocode(c.company_address).catch(() => null);
+    if (hit) location = { placeName: hit.placeName, confidence: hit.confidence, viaCompany: true };
+  } else if (company?.lat != null) {
+    location = { placeName: company.address ?? c.company ?? "company location", confidence: "city", viaCompany: true };
+  }
+
+  return {
+    duplicate: dup ? { id: dup.row.id, name: dup.row.name, matchedOn: dup.matchedOn } : null,
+    location,
+  };
+}
+
 const MERGEABLE = [
   "role", "email", "phone", "linkedin", "relationship", "stage", "owner", "source", "notes", "brain_slug",
 ] as const;

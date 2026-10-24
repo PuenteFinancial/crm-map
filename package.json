@@ -11,6 +11,7 @@
     "geocode:missing": "tsx scripts/geocode-missing.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.3.0",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.118.0",
     "gray-matter": "^4.0.3",
