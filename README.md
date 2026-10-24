@@ -47,3 +47,9 @@ Every source goes through `ingestContact` in [src/lib/ingest.ts](src/lib/ingest.
 ## Email sign-in limits
 
 Supabase's built-in email sender allows only a couple of auth emails per hour and only delivers to members of your Supabase organization. Before more people use the app, set up custom SMTP (Authentication → Emails → SMTP Settings; a Gmail app password works) and raise the email rate limit (Authentication → Rate Limits).
+
+## On the phone
+
+- **Install:** open the site in Safari → Share → Add to Home Screen, then open it from the icon and sign in there once (the home-screen app keeps its own login). Icons come from `scripts/make-icons.py`.
+- **Weak signal:** `public/sw.js` (registered in production only) keeps app code cached and saves each page after it loads. If the network takes over 4 seconds, the last saved copy shows while the fresh one loads; with no signal at all, saved pages still open and the map shows tiles you've already looked at. A pill under the top bar says when you're offline or looking at older data. Signing out deletes the saved pages.
+- **Logging visits offline:** visits saved with no connection wait on the phone and sync automatically when the connection returns (retried every 30 s). Each visit carries an id made on the phone, so a retry can't create a duplicate. Other edits need a connection.

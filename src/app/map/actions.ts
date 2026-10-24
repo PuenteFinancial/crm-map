@@ -74,6 +74,8 @@ export async function getVisits(contactId: string): Promise<Visit[]> {
 }
 
 const visitInput = z.object({
+  // Client-made id for new visits, so a retry after a dropped connection can't log it twice.
+  id: z.uuid().nullish(),
   // Set when completing a scheduled meeting instead of logging a new visit.
   visit_id: z.uuid().nullish(),
   contact_id: z.uuid(),
@@ -86,8 +88,10 @@ const visitInput = z.object({
   stage: z.enum(STAGES).nullable(),
 });
 
-export async function logVisit(raw: z.input<typeof visitInput>) {
-  const { stage, visit_id, ...visit } = visitInput.parse(raw);
+export type LogVisitInput = z.input<typeof visitInput>;
+
+export async function logVisit(raw: LogVisitInput) {
+  const { stage, visit_id, id, ...visit } = visitInput.parse(raw);
   const row = {
     ...visit,
     status: "done" as const,
@@ -98,7 +102,7 @@ export async function logVisit(raw: z.input<typeof visitInput>) {
   const supabase = await createClient();
   const { error } = visit_id
     ? await supabase.from("visits").update(row).eq("id", visit_id)
-    : await supabase.from("visits").insert(row);
+    : await supabase.from("visits").upsert({ ...row, ...(id ? { id } : {}) }, { onConflict: "id", ignoreDuplicates: true });
   if (error) throw new Error(error.message);
   if (stage) {
     const { error: stageError } = await supabase.from("contacts").update({ stage }).eq("id", visit.contact_id);

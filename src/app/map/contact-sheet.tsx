@@ -45,9 +45,12 @@ export function ContactSheet({ contact: c, me, onClose, onPlacePin, onNearby, in
     };
   }, [c.id, version]);
 
-  function finish() {
+  const [notice, setNotice] = useState<string | null>(null);
+
+  function finish(outcome?: "queued") {
     setMode({ kind: "none" });
     setVersion((v) => v + 1);
+    setNotice(outcome === "queued" ? "No signal, so the visit is saved on this phone. It'll sync when you're back online." : null);
   }
 
   function save(patch: Parameters<typeof updateContact>[1]) {
@@ -139,6 +142,7 @@ export function ContactSheet({ contact: c, me, onClose, onPlacePin, onNearby, in
         <LocationRow contact={c} onPlacePin={onPlacePin} />
 
         {error && <p className="text-sm text-red-600">{error}</p>}
+        {notice && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">📶 {notice}</p>}
 
         {mode.kind === "log" ? (
           <LogVisitForm contact={c} me={me} completing={mode.completing} onDone={finish} />

@@ -49,6 +49,7 @@ async function MapData({ searchParams }: Pick<PageProps<"/">, "searchParams">) {
       meetings={meetingsRes.data as Meeting[]}
       me={(meRes.data?.name as Owner | undefined) ?? null}
       initialSelectedId={typeof selected === "string" ? selected : null}
+      renderedAt={renderTime()}
     />
   );
 }
@@ -74,4 +75,9 @@ function rollUpVisits(visits: VisitStub[]) {
 // Keep meetings from earlier today on the agenda so they can still be marked done.
 function agendaStart() {
   return new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+}
+
+// When this data was fetched, so the app can tell when it's showing a saved copy.
+function renderTime() {
+  return Date.now();
 }

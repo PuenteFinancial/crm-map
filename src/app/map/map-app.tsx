@@ -8,6 +8,7 @@ import { CATEGORIES, PRIORITIES, type Category, type Owner, type Priority } from
 import { signOut } from "../login/actions";
 import { setPin } from "./actions";
 import { AgendaPanel, meetingLocation } from "./agenda-panel";
+import { ConnectionBanner } from "./connection-banner";
 import { ContactSheet } from "./contact-sheet";
 import { ListView } from "./list-view";
 import { NearbySheet, type NearbyAnchor } from "./nearby-sheet";
@@ -37,9 +38,10 @@ type MapAppProps = {
   meetings: Meeting[];
   me: Owner | null;
   initialSelectedId: string | null;
+  renderedAt: number;
 };
 
-export function MapApp({ contacts, meetings, me, initialSelectedId }: MapAppProps) {
+export function MapApp({ contacts, meetings, me, initialSelectedId, renderedAt }: MapAppProps) {
   const [selectedId, setSelectedIdState] = useState<string | null>(initialSelectedId);
   const [filters, setFilters] = useState<Filters>(ALL_FILTERS);
   const [query, setQuery] = useState("");
@@ -255,6 +257,7 @@ export function MapApp({ contacts, meetings, me, initialSelectedId }: MapAppProp
             )}
           </div>
         )}
+        <ConnectionBanner renderedAt={renderedAt} />
         {locating && (
           <p className="pointer-events-auto self-start rounded-full bg-neutral-900 px-3 py-1.5 text-sm text-white">
             {locating}
@@ -318,7 +321,11 @@ export function MapApp({ contacts, meetings, me, initialSelectedId }: MapAppProp
         {panel === "menu" && (
           <Panel>
             <Link href="/add" className="rounded-lg px-2 py-2 font-medium hover:bg-neutral-50">＋ Add contacts (paste, photo, CSV)</Link>
-            <form action={signOut}>
+            <form
+              action={signOut}
+              // Saved offline pages hold contact data; drop them on sign-out.
+              onSubmit={() => navigator.serviceWorker?.controller?.postMessage("clear-pages")}
+            >
               <button className="w-full rounded-lg px-2 py-2 text-left text-neutral-500 hover:bg-neutral-50">Sign out</button>
             </form>
           </Panel>

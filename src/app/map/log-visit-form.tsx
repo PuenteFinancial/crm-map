@@ -4,7 +4,8 @@ import { useState, useTransition } from "react";
 import type { MapContact, Visit } from "@/lib/contacts";
 import { isoToWallTime, nowWallTime, wallTimeToIso } from "@/lib/time";
 import { STAGES, type Owner, type Stage } from "@/lib/types";
-import { logVisit } from "./actions";
+import { logVisit, type LogVisitInput } from "./actions";
+import { isNetworkError, queueVisit } from "./outbox";
 
 const field = "w-full rounded-lg border border-neutral-300 bg-white px-2.5 py-2 text-[16px]";
 const label = "flex flex-col gap-1 text-xs font-medium text-neutral-500";
@@ -14,32 +15,44 @@ type Props = {
   me: Owner | null;
   /** A scheduled meeting being marked done; its type and time prefill the form. */
   completing?: Visit;
-  onDone: () => void;
+  /** queued: saved on this phone because there was no signal; it syncs when back online. */
+  onDone: (outcome?: "queued") => void;
 };
 
 export function LogVisitForm({ contact, me, completing, onDone }: Props) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Made once per form so a retry of the same visit is recognised by the server.
+  const [visitId] = useState(() => crypto.randomUUID());
 
   function submit(form: FormData) {
     setError(null);
     const text = (k: string) => String(form.get(k) ?? "").trim() || null;
+    const payload: LogVisitInput = {
+      id: completing ? null : visitId,
+      visit_id: completing?.id ?? null,
+      contact_id: contact.id,
+      type: form.get("type") as "meeting" | "drop-in" | "call",
+      who: form.get("who") as "joshua" | "colton" | "both",
+      starts_at: wallTimeToIso(String(form.get("when"))),
+      outcome: text("outcome"),
+      notes: text("notes"),
+      next_step: text("next_step"),
+      stage: (text("stage") as Stage | null),
+    };
+    const queue = () => {
+      queueVisit({ key: visitId, payload, contactName: contact.name, queuedAt: new Date().toISOString() });
+      onDone("queued");
+    };
+    if (!navigator.onLine) return queue();
+
     startTransition(async () => {
       try {
-        await logVisit({
-          visit_id: completing?.id ?? null,
-          contact_id: contact.id,
-          type: form.get("type") as "meeting" | "drop-in" | "call",
-          who: form.get("who") as "joshua" | "colton" | "both",
-          starts_at: wallTimeToIso(String(form.get("when"))),
-          outcome: text("outcome"),
-          notes: text("notes"),
-          next_step: text("next_step"),
-          stage: (text("stage") as Stage | null),
-        });
+        await logVisit(payload);
         onDone();
       } catch (e) {
-        setError((e as Error).message);
+        if (isNetworkError(e)) queue();
+        else setError((e as Error).message);
       }
     });
   }
@@ -48,7 +61,7 @@ export function LogVisitForm({ contact, me, completing, onDone }: Props) {
     <form action={submit} className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-3">
       <div className="flex items-center justify-between">
         <h3 className="font-semibold">{completing ? "How did it go?" : "Log a visit"}</h3>
-        <button type="button" onClick={onDone} className="text-sm text-neutral-500">Cancel</button>
+        <button type="button" onClick={() => onDone()} className="text-sm text-neutral-500">Cancel</button>
       </div>
       <div className="grid grid-cols-2 gap-2">
         <label className={label}>
