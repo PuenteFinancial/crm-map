@@ -1,21 +1,23 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import type { MapContact } from "@/lib/contacts";
+import type { MapContact, Visit } from "@/lib/contacts";
+import { isoToWallTime, nowWallTime, wallTimeToIso } from "@/lib/time";
 import { STAGES, type Owner, type Stage } from "@/lib/types";
 import { logVisit } from "./actions";
-
-// datetime-local wants "YYYY-MM-DDTHH:mm" in local time.
-function localNow() {
-  const d = new Date();
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-  return d.toISOString().slice(0, 16);
-}
 
 const field = "w-full rounded-lg border border-neutral-300 bg-white px-2.5 py-2 text-[16px]";
 const label = "flex flex-col gap-1 text-xs font-medium text-neutral-500";
 
-export function LogVisitForm({ contact, me, onDone }: { contact: MapContact; me: Owner | null; onDone: () => void }) {
+type Props = {
+  contact: MapContact;
+  me: Owner | null;
+  /** A scheduled meeting being marked done; its type and time prefill the form. */
+  completing?: Visit;
+  onDone: () => void;
+};
+
+export function LogVisitForm({ contact, me, completing, onDone }: Props) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -25,10 +27,11 @@ export function LogVisitForm({ contact, me, onDone }: { contact: MapContact; me:
     startTransition(async () => {
       try {
         await logVisit({
+          visit_id: completing?.id ?? null,
           contact_id: contact.id,
           type: form.get("type") as "meeting" | "drop-in" | "call",
           who: form.get("who") as "joshua" | "colton" | "both",
-          starts_at: new Date(String(form.get("when"))).toISOString(),
+          starts_at: wallTimeToIso(String(form.get("when"))),
           outcome: text("outcome"),
           notes: text("notes"),
           next_step: text("next_step"),
@@ -44,13 +47,13 @@ export function LogVisitForm({ contact, me, onDone }: { contact: MapContact; me:
   return (
     <form action={submit} className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-3">
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold">Log a visit</h3>
+        <h3 className="font-semibold">{completing ? "How did it go?" : "Log a visit"}</h3>
         <button type="button" onClick={onDone} className="text-sm text-neutral-500">Cancel</button>
       </div>
       <div className="grid grid-cols-2 gap-2">
         <label className={label}>
           Type
-          <select name="type" defaultValue="drop-in" className={field}>
+          <select name="type" defaultValue={completing?.type ?? "drop-in"} className={field}>
             <option value="drop-in">Drop-in</option>
             <option value="meeting">Meeting</option>
             <option value="call">Call</option>
@@ -58,7 +61,7 @@ export function LogVisitForm({ contact, me, onDone }: { contact: MapContact; me:
         </label>
         <label className={label}>
           Who went
-          <select name="who" defaultValue={me ?? "both"} className={field}>
+          <select name="who" defaultValue={completing?.who ?? me ?? "both"} className={field}>
             <option value="both">Both</option>
             <option value="joshua">Joshua</option>
             <option value="colton">Colton</option>
@@ -66,8 +69,14 @@ export function LogVisitForm({ contact, me, onDone }: { contact: MapContact; me:
         </label>
       </div>
       <label className={label}>
-        When
-        <input name="when" type="datetime-local" defaultValue={localNow()} required className={field} />
+        When (LA time)
+        <input
+          name="when"
+          type="datetime-local"
+          defaultValue={completing?.starts_at ? isoToWallTime(completing.starts_at) : nowWallTime()}
+          required
+          className={field}
+        />
       </label>
       <label className={label}>
         Outcome
@@ -75,7 +84,7 @@ export function LogVisitForm({ contact, me, onDone }: { contact: MapContact; me:
       </label>
       <label className={label}>
         Notes
-        <textarea name="notes" rows={3} className={field} />
+        <textarea name="notes" rows={3} defaultValue={completing?.notes ?? ""} className={field} />
       </label>
       <label className={label}>
         Next step

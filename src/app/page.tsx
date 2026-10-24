@@ -1,6 +1,6 @@
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { CONTACT_COLUMNS, type MapContact } from "@/lib/contacts";
+import { CONTACT_COLUMNS, type MapContact, type Meeting } from "@/lib/contacts";
 import { createClient } from "@/lib/supabase/server";
 import type { Owner } from "@/lib/types";
 import { MapApp } from "./map/map-app";
@@ -19,13 +19,20 @@ async function MapData({ searchParams }: Pick<PageProps<"/">, "searchParams">) {
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
 
-  const [contactsRes, visitsRes, meRes] = await Promise.all([
+  const [contactsRes, visitsRes, meetingsRes, meRes] = await Promise.all([
     supabase.from("contacts_located").select(CONTACT_COLUMNS).order("name"),
     supabase.from("visits").select("contact_id, status, starts_at"),
+    supabase
+      .from("visits")
+      .select("id, contact_id, type, starts_at, ends_at, address, lat, lng, notes")
+      .eq("status", "scheduled")
+      .gte("starts_at", agendaStart())
+      .order("starts_at"),
     supabase.from("team_members").select("name").ilike("email", String(claims?.claims.email ?? "")).maybeSingle(),
   ]);
   if (contactsRes.error) throw contactsRes.error;
   if (visitsRes.error) throw visitsRes.error;
+  if (meetingsRes.error) throw meetingsRes.error;
 
   const { lastVisit, nextMeeting } = rollUpVisits(visitsRes.data);
 
@@ -39,6 +46,7 @@ async function MapData({ searchParams }: Pick<PageProps<"/">, "searchParams">) {
   return (
     <MapApp
       contacts={contacts}
+      meetings={meetingsRes.data as Meeting[]}
       me={(meRes.data?.name as Owner | undefined) ?? null}
       initialSelectedId={typeof selected === "string" ? selected : null}
     />
@@ -61,4 +69,9 @@ function rollUpVisits(visits: VisitStub[]) {
     }
   }
   return { lastVisit, nextMeeting };
+}
+
+// Keep meetings from earlier today on the agenda so they can still be marked done.
+function agendaStart() {
+  return new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
 }

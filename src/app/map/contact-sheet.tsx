@@ -9,19 +9,28 @@ import {
   type Visit,
 } from "@/lib/contacts";
 import { CATEGORIES, PRIORITIES, STAGES, type Category, type Owner, type Priority, type Stage } from "@/lib/types";
-import { getVisits, setAddress, updateContact } from "./actions";
+import { formatTime, formatWhen } from "@/lib/time";
+import { getVisits, setAddress, skipVisit, updateContact } from "./actions";
 import { LogVisitForm } from "./log-visit-form";
+import { ScheduleMeetingForm } from "./schedule-meeting-form";
 
 type Props = {
   contact: MapContact;
   me: Owner | null;
   onClose: () => void;
   onPlacePin: () => void;
+  onNearby: () => void;
+  /** Shown when the sheet was opened from the Nearby list. */
+  onBack?: () => void;
 };
 
-export function ContactSheet({ contact: c, me, onClose, onPlacePin }: Props) {
+type Mode = { kind: "none" } | { kind: "log"; completing?: Visit } | { kind: "schedule" };
+
+export function ContactSheet({ contact: c, me, onClose, onPlacePin, onNearby, onBack }: Props) {
   const [visits, setVisits] = useState<Visit[] | null>(null);
-  const [logging, setLogging] = useState(false);
+  const [mode, setMode] = useState<Mode>({ kind: "none" });
+  // Bumped after any visit change so history refetches.
+  const [version, setVersion] = useState(0);
   const [expanded, setExpanded] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +41,12 @@ export function ContactSheet({ contact: c, me, onClose, onPlacePin }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [c.id, c.last_visit_at]);
+  }, [c.id, version]);
+
+  function finish() {
+    setMode({ kind: "none" });
+    setVersion((v) => v + 1);
+  }
 
   function save(patch: Parameters<typeof updateContact>[1]) {
     setError(null);
@@ -63,6 +77,9 @@ export function ContactSheet({ contact: c, me, onClose, onPlacePin }: Props) {
       </button>
 
       <div className="flex flex-col gap-4 overflow-y-auto px-4 pb-[max(1rem,env(safe-area-inset-bottom))] md:pt-4">
+        {onBack && (
+          <button onClick={onBack} className="self-start text-sm text-blue-600">← Back to nearby</button>
+        )}
         <header className="flex items-start gap-3">
           <div className="flex-1">
             <h2 className="text-lg font-semibold leading-tight">{c.name}</h2>
@@ -121,18 +138,38 @@ export function ContactSheet({ contact: c, me, onClose, onPlacePin }: Props) {
 
         {error && <p className="text-sm text-red-600">{error}</p>}
 
-        {logging ? (
-          <LogVisitForm contact={c} me={me} onDone={() => setLogging(false)} />
+        {mode.kind === "log" ? (
+          <LogVisitForm contact={c} me={me} completing={mode.completing} onDone={finish} />
+        ) : mode.kind === "schedule" ? (
+          <ScheduleMeetingForm contact={c} me={me} onDone={finish} />
         ) : (
-          <button
-            onClick={() => {
-              setLogging(true);
-              setExpanded(true);
-            }}
-            className="rounded-xl bg-neutral-900 py-3 font-medium text-white"
-          >
-            Log a visit
-          </button>
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              onClick={() => {
+                setMode({ kind: "log" });
+                setExpanded(true);
+              }}
+              className="rounded-xl bg-neutral-900 py-3 text-sm font-medium text-white"
+            >
+              Log visit
+            </button>
+            <button
+              onClick={() => {
+                setMode({ kind: "schedule" });
+                setExpanded(true);
+              }}
+              className="rounded-xl border border-neutral-900 py-3 text-sm font-medium"
+            >
+              Schedule
+            </button>
+            <button
+              onClick={onNearby}
+              disabled={!hasPin}
+              className="rounded-xl border border-neutral-300 py-3 text-sm font-medium disabled:opacity-40"
+            >
+              Nearby
+            </button>
+          </div>
         )}
 
         <div className="flex flex-col gap-2">
@@ -144,15 +181,44 @@ export function ContactSheet({ contact: c, me, onClose, onPlacePin }: Props) {
           ) : (
             <ul className="flex flex-col gap-2">
               {visits.map((v) => (
-                <li key={v.id} className="rounded-xl border border-neutral-200 px-3 py-2 text-sm">
+                <li
+                  key={v.id}
+                  className={`rounded-xl border px-3 py-2 text-sm ${
+                    v.status === "scheduled" ? "border-amber-300 bg-amber-50" : "border-neutral-200"
+                  } ${v.status === "skipped" ? "opacity-50" : ""}`}
+                >
                   <p className="font-medium">
-                    {v.status === "scheduled" ? "Scheduled " : ""}
+                    {v.status === "scheduled" ? "Upcoming " : v.status === "skipped" ? "Skipped " : ""}
                     {v.type} · {v.starts_at ? formatWhen(v.starts_at) : "no date"}
+                    {v.ends_at && v.status === "scheduled" && <>–{formatTime(v.ends_at)}</>}
                     {v.who && <span className="font-normal text-neutral-500"> · {v.who}</span>}
                   </p>
+                  {v.address && <p className="text-neutral-600">📍 {v.address}</p>}
                   {v.outcome && <p>{v.outcome}</p>}
                   {v.notes && <p className="whitespace-pre-wrap text-neutral-600">{v.notes}</p>}
                   {v.next_step && <p className="text-neutral-600">Next: {v.next_step}</p>}
+                  {v.status === "scheduled" && (
+                    <div className="mt-2 flex gap-3">
+                      <button
+                        onClick={() => {
+                          setMode({ kind: "log", completing: v });
+                          setExpanded(true);
+                        }}
+                        className="font-medium text-blue-600"
+                      >
+                        Mark done
+                      </button>
+                      <button
+                        onClick={() => startTransition(async () => {
+                          await skipVisit(v.id);
+                          setVersion((n) => n + 1);
+                        })}
+                        className="text-neutral-500"
+                      >
+                        Didn&apos;t happen
+                      </button>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -231,14 +297,4 @@ function LocationRow({ contact: c, onPlacePin }: { contact: MapContact; onPlaceP
       {message && <p className="text-neutral-600">{message}</p>}
     </div>
   );
-}
-
-export function formatWhen(iso: string) {
-  return new Date(iso).toLocaleString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
 }

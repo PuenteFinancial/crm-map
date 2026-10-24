@@ -1,7 +1,7 @@
 "use client";
 
 import "mapbox-gl/dist/mapbox-gl.css";
-import type { FeatureCollection, Point } from "geojson";
+import type { Feature, FeatureCollection, Point, Polygon } from "geojson";
 import type { GeoJSONSource } from "mapbox-gl";
 import { useEffect, useMemo, useRef } from "react";
 import Map, {
@@ -12,19 +12,32 @@ import Map, {
   type MapMouseEvent,
   type MapRef,
 } from "react-map-gl/mapbox";
-import { CATEGORY_COLORS, type MapContact } from "@/lib/contacts";
+import { CATEGORY_COLORS, METERS_PER_MILE, type MapContact } from "@/lib/contacts";
+import type { NearbyAnchor } from "./nearby-sheet";
 
 const LA = { longitude: -118.2437, latitude: 34.0522, zoom: 9.5 };
 
 type Props = {
   contacts: MapContact[];
   selectedId: string | null;
+  nearby: NearbyAnchor | null;
   placing: boolean;
   onSelect: (id: string | null) => void;
   onPlace: (lat: number, lng: number) => void;
 };
 
-export default function MapView({ contacts, selectedId, placing, onSelect, onPlace }: Props) {
+// Radius ring around a point, as a 64-sided polygon.
+function circle(lat: number, lng: number, meters: number): Feature<Polygon> {
+  const dLat = meters / 111320;
+  const dLng = meters / (111320 * Math.cos((lat * Math.PI) / 180));
+  const ring = Array.from({ length: 65 }, (_, i) => {
+    const t = (i / 64) * 2 * Math.PI;
+    return [lng + dLng * Math.cos(t), lat + dLat * Math.sin(t)];
+  });
+  return { type: "Feature", geometry: { type: "Polygon", coordinates: [ring] }, properties: {} };
+}
+
+export default function MapView({ contacts, selectedId, nearby, placing, onSelect, onPlace }: Props) {
   const mapRef = useRef<MapRef>(null);
 
   const geojson = useMemo<FeatureCollection<Point>>(
@@ -47,6 +60,19 @@ export default function MapView({ contacts, selectedId, placing, onSelect, onPla
     }),
     [contacts],
   );
+
+  // Frame the whole Nearby radius above the sheet (phones) or left of it (wider screens).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!nearby || !map) return;
+    const dLat = (nearby.radiusMi * METERS_PER_MILE) / 111320;
+    const dLng = dLat / Math.cos((nearby.lat * Math.PI) / 180);
+    const { clientWidth: w, clientHeight: h } = map.getContainer();
+    map.fitBounds(
+      [[nearby.lng - dLng, nearby.lat - dLat], [nearby.lng + dLng, nearby.lat + dLat]],
+      { padding: w < 768 ? { top: 110, bottom: h * 0.55 + 10, left: 20, right: 20 } : { top: 80, bottom: 40, left: 40, right: 440 } },
+    );
+  }, [nearby]);
 
   // Keep the selected pin in the part of the map the contact sheet doesn't cover:
   // the top ~40% on phones (sheet is at the bottom), the left side on wider screens (sheet is on the right).
@@ -101,6 +127,26 @@ export default function MapView({ contacts, selectedId, placing, onSelect, onPla
     >
       <GeolocateControl position="bottom-right" trackUserLocation showUserHeading />
       <NavigationControl position="bottom-right" showCompass={false} />
+
+      {nearby && (
+        <Source id="nearby" type="geojson" data={circle(nearby.lat, nearby.lng, nearby.radiusMi * METERS_PER_MILE)}>
+          <Layer id="nearby-fill" type="fill" paint={{ "fill-color": "#2563eb", "fill-opacity": 0.07 }} />
+          <Layer id="nearby-line" type="line" paint={{ "line-color": "#2563eb", "line-width": 1.5, "line-dasharray": [2, 2] }} />
+        </Source>
+      )}
+      {nearby && (
+        <Source
+          id="nearby-anchor"
+          type="geojson"
+          data={{ type: "Feature", geometry: { type: "Point", coordinates: [nearby.lng, nearby.lat] }, properties: {} }}
+        >
+          <Layer
+            id="nearby-anchor"
+            type="circle"
+            paint={{ "circle-radius": 6, "circle-color": "#2563eb", "circle-stroke-color": "#ffffff", "circle-stroke-width": 3 }}
+          />
+        </Source>
+      )}
 
       <Source id="contacts" type="geojson" data={geojson} cluster clusterMaxZoom={13} clusterRadius={40}>
         <Layer

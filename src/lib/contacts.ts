@@ -36,11 +36,38 @@ export type Visit = {
   status: "scheduled" | "done" | "skipped";
   type: "meeting" | "drop-in" | "call";
   starts_at: string | null;
+  ends_at: string | null;
   who: "joshua" | "colton" | "both" | null;
+  address: string | null;
   outcome: string | null;
   notes: string | null;
   next_step: string | null;
 };
+
+// A scheduled visit, for the agenda and Nearby. lat/lng is the meeting place,
+// falling back to the contact's location when no separate address was given.
+export type Meeting = {
+  id: string;
+  contact_id: string;
+  type: "meeting" | "drop-in" | "call";
+  starts_at: string;
+  ends_at: string | null;
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
+  notes: string | null;
+};
+
+export const METERS_PER_MILE = 1609.344;
+
+/** Great-circle distance in meters. */
+export function distanceMeters(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+  const rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad;
+  const dLng = (b.lng - a.lng) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
+  return 2 * 6371008.8 * Math.asin(Math.sqrt(h));
+}
 
 export const CATEGORY_COLORS: Record<Category, string> = {
   founder: "#2563eb",

@@ -3,11 +3,14 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
-import { CATEGORY_COLORS, CATEGORY_LABELS, PRIORITY_LABELS, type MapContact } from "@/lib/contacts";
+import { CATEGORY_LABELS, PRIORITY_LABELS, type MapContact, type Meeting } from "@/lib/contacts";
 import { CATEGORIES, PRIORITIES, type Category, type Owner, type Priority } from "@/lib/types";
 import { signOut } from "../login/actions";
 import { setPin } from "./actions";
+import { AgendaPanel, meetingLocation } from "./agenda-panel";
 import { ContactSheet } from "./contact-sheet";
+import { NearbySheet, type NearbyAnchor } from "./nearby-sheet";
+import { Dot } from "./ui";
 
 // mapbox-gl touches window on import.
 const MapView = dynamic(() => import("./map-view"), { ssr: false });
@@ -26,14 +29,22 @@ const ALL_FILTERS: Filters = {
   notVisited: false,
 };
 
-type MapAppProps = { contacts: MapContact[]; me: Owner | null; initialSelectedId: string | null };
+type MapAppProps = {
+  contacts: MapContact[];
+  meetings: Meeting[];
+  me: Owner | null;
+  initialSelectedId: string | null;
+};
 
-export function MapApp({ contacts, me, initialSelectedId }: MapAppProps) {
+export function MapApp({ contacts, meetings, me, initialSelectedId }: MapAppProps) {
   const [selectedId, setSelectedIdState] = useState<string | null>(initialSelectedId);
   const [filters, setFilters] = useState<Filters>(ALL_FILTERS);
   const [query, setQuery] = useState("");
-  const [panel, setPanelState] = useState<"none" | "filters" | "needs" | "menu">("none");
+  const [panel, setPanelState] = useState<"none" | "filters" | "needs" | "menu" | "agenda">("none");
   const [placingId, setPlacingId] = useState<string | null>(null);
+  const [nearby, setNearby] = useState<NearbyAnchor | null>(null);
+  const [nearbyByPriority, setNearbyByPriority] = useState(false);
+  const [locating, setLocating] = useState<string | null>(null);
   const [saving, startSaving] = useTransition();
 
   // Keep ?c= in the URL so a selected contact survives reloads and can be shared between you two.
@@ -71,6 +82,7 @@ export function MapApp({ contacts, me, initialSelectedId }: MapAppProps) {
       .slice(0, 8);
   }, [contacts, query]);
 
+  const byId = useMemo(() => new Map(contacts.map((c) => [c.id, c])), [contacts]);
   const needsPin = contacts.filter((c) => c.needs_review);
   const selected = contacts.find((c) => c.id === selectedId) ?? null;
   const placing = contacts.find((c) => c.id === placingId) ?? null;
@@ -85,6 +97,38 @@ export function MapApp({ contacts, me, initialSelectedId }: MapAppProps) {
     if (next.has(value)) next.delete(value);
     else next.add(value);
     return next;
+  }
+
+  function showNearby(anchor: Omit<NearbyAnchor, "radiusMi">) {
+    setNearby({ ...anchor, radiusMi: nearby?.radiusMi ?? 3 });
+    setSelectedId(null);
+    setPanelState("none");
+  }
+
+  function nearContact(c: MapContact) {
+    if (c.map_lat == null || c.map_lng == null) return;
+    showNearby({ label: c.name, lat: c.map_lat, lng: c.map_lng, contactId: c.id });
+  }
+
+  function nearMeeting(m: Meeting) {
+    const c = byId.get(m.contact_id);
+    const place = meetingLocation(m, c);
+    if (!place) return;
+    showNearby({ label: `meeting with ${c?.name ?? "contact"}`, ...place, contactId: m.contact_id });
+  }
+
+  function nearMe() {
+    if (!navigator.geolocation) return setLocating("This browser can't share location.");
+    setLocating("Finding you…");
+    setPanelState("none");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocating(null);
+        showNearby({ label: "you", lat: pos.coords.latitude, lng: pos.coords.longitude });
+      },
+      (err) => setLocating(err.message),
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
   }
 
   function handlePlace(lat: number, lng: number) {
@@ -102,6 +146,7 @@ export function MapApp({ contacts, me, initialSelectedId }: MapAppProps) {
       <MapView
         contacts={visible}
         selectedId={selectedId}
+        nearby={nearby}
         placing={placing != null}
         onSelect={(id) => {
           setSelectedId(id);
@@ -151,13 +196,51 @@ export function MapApp({ contacts, me, initialSelectedId }: MapAppProps) {
           </BarButton>
         </div>
 
-        {needsPin.length > 0 && panel === "none" && !placing && (
-          <button
-            onClick={() => setPanel("needs")}
-            className="pointer-events-auto self-start rounded-full bg-amber-100 px-3 py-1.5 text-sm font-medium text-amber-900 shadow-sm"
-          >
-            📍 {needsPin.length} need a location
-          </button>
+        {panel === "none" && !placing && (
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setPanel("agenda")}
+              className="pointer-events-auto rounded-full bg-white px-3 py-1.5 text-sm font-medium text-neutral-900 shadow-sm"
+            >
+              📅 {meetings.length} upcoming
+            </button>
+            <button
+              onClick={nearMe}
+              className="pointer-events-auto rounded-full bg-white px-3 py-1.5 text-sm font-medium text-neutral-900 shadow-sm"
+            >
+              ◎ Near me
+            </button>
+            {needsPin.length > 0 && (
+              <button
+                onClick={() => setPanel("needs")}
+                className="pointer-events-auto rounded-full bg-amber-100 px-3 py-1.5 text-sm font-medium text-amber-900 shadow-sm"
+              >
+                📍 {needsPin.length} need a location
+              </button>
+            )}
+          </div>
+        )}
+        {locating && (
+          <p className="pointer-events-auto self-start rounded-full bg-neutral-900 px-3 py-1.5 text-sm text-white">
+            {locating}
+            {locating !== "Finding you…" && (
+              <button onClick={() => setLocating(null)} className="ml-2 underline">OK</button>
+            )}
+          </p>
+        )}
+
+        {panel === "agenda" && (
+          <AgendaPanel
+            meetings={meetings}
+            contacts={byId}
+            onOpen={(id) => {
+              setNearby(null);
+              setSelectedId(id);
+              setPanelState("none");
+            }}
+            onNearby={nearMeeting}
+            onClose={() => setPanel("none")}
+          />
         )}
 
         {panel === "filters" && (
@@ -245,21 +328,35 @@ export function MapApp({ contacts, me, initialSelectedId }: MapAppProps) {
         </div>
       )}
 
-      {selected && !placing && (
+      {selected && !placing ? (
         <ContactSheet
           key={selected.id}
           contact={selected}
           me={me}
-          onClose={() => setSelectedId(null)}
+          onClose={() => {
+            setSelectedId(null);
+            setNearby(null);
+          }}
           onPlacePin={() => setPlacingId(selected.id)}
+          onNearby={() => nearContact(selected)}
+          onBack={nearby ? () => setSelectedId(null) : undefined}
         />
+      ) : (
+        nearby &&
+        !placing && (
+          <NearbySheet
+            anchor={nearby}
+            contacts={visible}
+            sortByPriority={nearbyByPriority}
+            onSortChange={setNearbyByPriority}
+            onRadiusChange={(radiusMi) => setNearby({ ...nearby, radiusMi })}
+            onSelect={setSelectedId}
+            onClose={() => setNearby(null)}
+          />
+        )
       )}
     </div>
   );
-}
-
-export function Dot({ category }: { category: Category }) {
-  return <span className="inline-block size-2.5 shrink-0 rounded-full" style={{ background: CATEGORY_COLORS[category] }} />;
 }
 
 function BarButton({ active, ...props }: React.ComponentProps<"button"> & { active?: boolean }) {
