@@ -11,6 +11,7 @@ import {
 import { CATEGORIES, PRIORITIES, STAGES, type Category, type Owner, type Priority, type Stage } from "@/lib/types";
 import { formatTime, formatWhen } from "@/lib/time";
 import { getVisits, setAddress, skipVisit, updateContact } from "./actions";
+import { EditContactForm } from "./edit-contact-form";
 import { LogVisitForm } from "./log-visit-form";
 import { ScheduleMeetingForm } from "./schedule-meeting-form";
 
@@ -26,7 +27,11 @@ type Props = {
   onBack?: () => void;
 };
 
-type Mode = { kind: "none" } | { kind: "log"; completing?: Visit } | { kind: "schedule" };
+type Mode =
+  | { kind: "none" }
+  | { kind: "log"; completing?: Visit }
+  | { kind: "schedule"; editing?: Visit }
+  | { kind: "edit" };
 
 export function ContactSheet({ contact: c, me, onClose, onPlacePin, onNearby, inPlan, onTogglePlan, onBack }: Props) {
   const [visits, setVisits] = useState<Visit[] | null>(null);
@@ -95,6 +100,15 @@ export function ContactSheet({ contact: c, me, onClose, onPlacePin, onNearby, in
               <p className="mt-1 text-sm font-medium text-amber-700">Meeting {formatWhen(c.next_meeting_at)}</p>
             )}
           </div>
+          <button
+            onClick={() => {
+              setMode({ kind: "edit" });
+              setExpanded(true);
+            }}
+            className="rounded-full bg-neutral-100 px-2.5 py-1 text-sm"
+          >
+            Edit
+          </button>
           <button onClick={onClose} className="rounded-full bg-neutral-100 px-2.5 py-1 text-sm" aria-label="Close">
             ✕
           </button>
@@ -144,10 +158,12 @@ export function ContactSheet({ contact: c, me, onClose, onPlacePin, onNearby, in
         {error && <p className="text-sm text-red-600">{error}</p>}
         {notice && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">📶 {notice}</p>}
 
-        {mode.kind === "log" ? (
+        {mode.kind === "edit" ? (
+          <EditContactForm contact={c} onDone={() => setMode({ kind: "none" })} onDeleted={onClose} />
+        ) : mode.kind === "log" ? (
           <LogVisitForm contact={c} me={me} completing={mode.completing} onDone={finish} />
         ) : mode.kind === "schedule" ? (
-          <ScheduleMeetingForm contact={c} me={me} onDone={finish} />
+          <ScheduleMeetingForm contact={c} me={me} editing={mode.editing} onDone={finish} />
         ) : (
           <div className="grid grid-cols-4 gap-2">
             <button
@@ -222,6 +238,15 @@ export function ContactSheet({ contact: c, me, onClose, onPlacePin, onNearby, in
                         className="font-medium text-blue-600"
                       >
                         Mark done
+                      </button>
+                      <button
+                        onClick={() => {
+                          setMode({ kind: "schedule", editing: v });
+                          setExpanded(true);
+                        }}
+                        className="text-blue-600"
+                      >
+                        Change time
                       </button>
                       <button
                         onClick={() => startTransition(async () => {

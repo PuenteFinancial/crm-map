@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import type { MapContact } from "@/lib/contacts";
-import { nowWallTime, wallTimeToIso } from "@/lib/time";
+import type { MapContact, Visit } from "@/lib/contacts";
+import { isoToWallTime, nowWallTime, wallTimeToIso } from "@/lib/time";
 import type { Owner } from "@/lib/types";
 import { scheduleMeeting } from "./actions";
 
@@ -18,12 +18,28 @@ function nextSlot() {
   return `${date}T${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
 }
 
-export function ScheduleMeetingForm({ contact, me, onDone }: { contact: MapContact; me: Owner | null; onDone: () => void }) {
+const DURATIONS = [15, 30, 45, 60, 90, 120];
+
+type Props = {
+  contact: MapContact;
+  me: Owner | null;
+  /** An upcoming meeting to change (time, place, who) instead of booking a new one. */
+  editing?: Visit;
+  onDone: () => void;
+};
+
+export function ScheduleMeetingForm({ contact, me, editing, onDone }: Props) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [type, setType] = useState<"meeting" | "call">("meeting");
-  const [elsewhere, setElsewhere] = useState(contact.map_lat == null);
+  const [type, setType] = useState<"meeting" | "call">(editing?.type === "call" ? "call" : "meeting");
+  const [elsewhere, setElsewhere] = useState(contact.map_lat == null || Boolean(editing?.address));
   const hasLocation = contact.map_lat != null;
+
+  const editingMinutes =
+    editing?.starts_at && editing.ends_at
+      ? Math.round((Date.parse(editing.ends_at) - Date.parse(editing.starts_at)) / 60000)
+      : null;
+  const durations = editingMinutes && !DURATIONS.includes(editingMinutes) ? [...DURATIONS, editingMinutes].sort((a, b) => a - b) : DURATIONS;
 
   function submit(form: FormData) {
     setError(null);
@@ -31,6 +47,7 @@ export function ScheduleMeetingForm({ contact, me, onDone }: { contact: MapConta
     startTransition(async () => {
       try {
         const res = await scheduleMeeting({
+          visit_id: editing?.id ?? null,
           contact_id: contact.id,
           type,
           starts_at: wallTimeToIso(String(form.get("when"))),
@@ -50,7 +67,7 @@ export function ScheduleMeetingForm({ contact, me, onDone }: { contact: MapConta
   return (
     <form action={submit} className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-3">
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold">Schedule</h3>
+        <h3 className="font-semibold">{editing ? "Change meeting" : "Schedule"}</h3>
         <button type="button" onClick={onDone} className="text-sm text-neutral-500">Cancel</button>
       </div>
       <div className="flex gap-1.5">
@@ -70,12 +87,12 @@ export function ScheduleMeetingForm({ contact, me, onDone }: { contact: MapConta
       <div className="grid grid-cols-[1fr_auto] gap-2">
         <label className={label}>
           When (LA time)
-          <input name="when" type="datetime-local" defaultValue={nextSlot()} step={300} required className={field} />
+          <input name="when" type="datetime-local" defaultValue={editing?.starts_at ? isoToWallTime(editing.starts_at) : nextSlot()} step={300} required className={field} />
         </label>
         <label className={label}>
           Length
-          <select name="duration" defaultValue="45" className={field}>
-            {[15, 30, 45, 60, 90, 120].map((d) => <option key={d} value={d}>{d} min</option>)}
+          <select name="duration" defaultValue={String(editingMinutes ?? 45)} className={field}>
+            {durations.map((d) => <option key={d} value={d}>{d} min</option>)}
           </select>
         </label>
       </div>
@@ -95,13 +112,13 @@ export function ScheduleMeetingForm({ contact, me, onDone }: { contact: MapConta
             </label>
           )}
           {elsewhere && (
-            <input name="address" required placeholder="Coffee shop, office address…" className={field} />
+            <input name="address" required defaultValue={editing?.address ?? ""} placeholder="Coffee shop, office address…" className={field} />
           )}
         </div>
       )}
       <label className={label}>
         Who&apos;s going
-        <select name="who" defaultValue="both" className={field}>
+        <select name="who" defaultValue={editing?.who ?? "both"} className={field}>
           <option value="both">Both</option>
           <option value="joshua">Joshua{me === "joshua" ? " (me)" : ""}</option>
           <option value="colton">Colton{me === "colton" ? " (me)" : ""}</option>
@@ -109,11 +126,11 @@ export function ScheduleMeetingForm({ contact, me, onDone }: { contact: MapConta
       </label>
       <label className={label}>
         Notes
-        <textarea name="notes" rows={2} placeholder="Agenda, who set it up…" className={field} />
+        <textarea name="notes" rows={2} defaultValue={editing?.notes ?? ""} placeholder="Agenda, who set it up…" className={field} />
       </label>
       {error && <p className="text-sm text-red-600">{error}</p>}
       <button disabled={pending} className="rounded-xl bg-neutral-900 py-3 font-medium text-white disabled:opacity-50">
-        {pending ? "Saving…" : "Save meeting"}
+        {pending ? "Saving…" : editing ? "Save changes" : "Save meeting"}
       </button>
     </form>
   );

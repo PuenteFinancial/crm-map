@@ -2,11 +2,14 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { PRIORITY_LABELS, type MapContact, type Meeting } from "@/lib/contacts";
-import { googleMapsLinks } from "@/lib/route";
+import { googleMapsLinks, type RouteStop } from "@/lib/route";
 import { dayKey, formatDay, formatTime } from "@/lib/time";
 import { BottomSheet } from "./bottom-sheet";
+import { logVisit, type LogVisitInput } from "./actions";
+import { isNetworkError, queueVisit } from "./outbox";
 import { addPlace } from "./plan-actions";
 import { Dot } from "./ui";
+import type { Owner } from "@/lib/types";
 import type { DayPlanState } from "./use-day-plan";
 
 type Props = {
@@ -15,6 +18,7 @@ type Props = {
   meetings: Meeting[];
   onOpenContact: (id: string) => void;
   onClose: () => void;
+  me: Owner | null;
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
 };
@@ -22,7 +26,7 @@ type Props = {
 const input = "rounded-lg border border-neutral-300 bg-white px-2 py-1.5 text-[16px]";
 const PRIORITY_RANK = { "must-see": 0, "want-to-see": 1, "if-nearby": 2 } as const;
 
-export function PlanSheet({ plan, contacts, meetings, onOpenContact, onClose, collapsed, onCollapsedChange }: Props) {
+export function PlanSheet({ plan, contacts, meetings, onOpenContact, onClose, me, collapsed, onCollapsedChange }: Props) {
   const [view, setView] = useState<"edit" | "pick">("edit");
   const byId = useMemo(() => new Map(contacts.map((c) => [c.id, c])), [contacts]);
   const dayMeetings = meetings.filter((m) => dayKey(m.starts_at) === plan.date);
@@ -82,7 +86,7 @@ export function PlanSheet({ plan, contacts, meetings, onOpenContact, onClose, co
         {view === "pick" ? (
           <ContactPicker plan={plan} contacts={contacts} onDone={() => setView("edit")} />
         ) : plan.result ? (
-          <RouteView plan={plan} onOpenContact={onOpenContact} />
+          <RouteView plan={plan} byId={byId} me={me} onOpenContact={onOpenContact} />
         ) : (
           <>
             <SettingsBlock plan={plan} />
@@ -285,8 +289,68 @@ function ContactPicker({ plan, contacts, onDone }: { plan: DayPlanState; contact
   );
 }
 
-function RouteView({ plan, onOpenContact }: { plan: DayPlanState; onOpenContact: (id: string) => void }) {
+type RouteViewProps = {
+  plan: DayPlanState;
+  byId: Map<string, MapContact>;
+  me: Owner | null;
+  onOpenContact: (id: string) => void;
+};
+
+function RouteView({ plan, byId, me, onOpenContact }: RouteViewProps) {
   const r = plan.result!;
+  // Stops marked here, for instant feedback (and for visits queued offline, which the
+  // server data won't show until they sync).
+  const [marked, setMarked] = useState<Record<string, "saving" | "done" | "queued">>({});
+  const [markError, setMarkError] = useState<string | null>(null);
+
+  const visitedOnPlanDay = (contactId: string) => {
+    const last = byId.get(contactId)?.last_visit_at;
+    return last != null && dayKey(last) === plan.date;
+  };
+
+  async function markVisited(s: RouteStop) {
+    if (!s.contactId) return;
+    const key = s.contactId;
+    setMarkError(null);
+    setMarked((m) => ({ ...m, [key]: "saving" }));
+    const id = crypto.randomUUID();
+    const payload: LogVisitInput = {
+      id: s.visitId ? null : id,
+      visit_id: s.visitId ?? null,
+      contact_id: s.contactId,
+      type: s.kind === "meeting" ? "meeting" : "drop-in",
+      who: me ?? "both",
+      starts_at: s.kind === "meeting" && s.startsAt ? s.startsAt : new Date().toISOString(),
+      outcome: null,
+      notes: null,
+      next_step: null,
+      stage: null,
+    };
+    const queue = () => {
+      queueVisit({ key: id, payload, contactName: s.name, queuedAt: new Date().toISOString() });
+      setMarked((m) => ({ ...m, [key]: "queued" }));
+    };
+    try {
+      if (!navigator.onLine) return queue();
+      await logVisit(payload);
+      setMarked((m) => ({ ...m, [key]: "done" }));
+    } catch (e) {
+      if (isNetworkError(e)) {
+        try {
+          queue();
+        } catch (qe) {
+          setMarkError((qe as Error).message);
+        }
+      } else {
+        setMarkError((e as Error).message);
+        setMarked((m) => {
+          const next = { ...m };
+          delete next[key];
+          return next;
+        });
+      }
+    }
+  }
   const links = googleMapsLinks(r.stops, Boolean(plan.settings?.start.here));
   let n = 0;
 
@@ -351,10 +415,19 @@ function RouteView({ plan, onOpenContact }: { plan: DayPlanState; onOpenContact:
                   {s.late && <span className="font-medium text-red-600"> · late</span>}
                 </span>
               </button>
+              {numbered && s.contactId && (
+                <VisitedButton
+                  state={marked[s.contactId] ?? (visitedOnPlanDay(s.contactId) ? "done" : undefined)}
+                  onClick={() => markVisited(s)}
+                />
+              )}
             </li>
           );
         })}
       </ol>
+
+      {markError && <p className="text-sm text-red-600">{markError}</p>}
+      <p className="text-xs text-neutral-500">Tap Visited as you go. Tap a name to add notes.</p>
 
       {r.dropped.length > 0 && (
         <div className="flex flex-col gap-1 text-sm">
@@ -367,5 +440,24 @@ function RouteView({ plan, onOpenContact }: { plan: DayPlanState; onOpenContact:
         </div>
       )}
     </div>
+  );
+}
+
+function VisitedButton({ state, onClick }: { state?: "saving" | "done" | "queued"; onClick: () => void }) {
+  if (state === "done" || state === "queued") {
+    return (
+      <span className="shrink-0 self-center rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-800">
+        ✓ {state === "queued" ? "Saved offline" : "Visited"}
+      </span>
+    );
+  }
+  return (
+    <button
+      onClick={onClick}
+      disabled={state === "saving"}
+      className="shrink-0 self-center rounded-full border border-neutral-300 px-2.5 py-1 text-xs font-medium disabled:opacity-50"
+    >
+      {state === "saving" ? "…" : "Visited"}
+    </button>
   );
 }

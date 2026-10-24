@@ -422,6 +422,7 @@ export function MapApp({ contacts, meetings, me, initialSelectedId, renderedAt, 
           meetings={meetings}
           onOpenContact={setSelectedId}
           onClose={() => setPlanOpen(false)}
+          me={me}
           collapsed={sheetCollapsed}
           onCollapsedChange={setSheetCollapsed}
         />

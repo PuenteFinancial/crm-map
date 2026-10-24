@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { Visit } from "@/lib/contacts";
 import { geocode, isDrivable } from "@/lib/geocode";
+import { normalizeEmail, normalizeLinkedin, upsertCompany } from "@/lib/ingest";
 import { createClient } from "@/lib/supabase/server";
 import { CATEGORIES, OWNERS, PRIORITIES, STAGES } from "@/lib/types";
 
@@ -25,6 +26,59 @@ const contactPatch = z
 export async function updateContact(id: string, patch: z.input<typeof contactPatch>) {
   const supabase = await createClient();
   const { error } = await supabase.from("contacts").update(contactPatch.parse(patch)).eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/");
+}
+
+const detailsInput = z.object({
+  name: z.string().trim().min(1, "Name can't be empty"),
+  company: z.string().trim().nullable(),
+  role: z.string().trim().nullable(),
+  email: z.string().trim().nullable(),
+  phone: z.string().trim().nullable(),
+  linkedin: z.string().trim().nullable(),
+  relationship: z.string().trim().nullable(),
+  owner: z.enum(OWNERS).nullable(),
+  notes: z.string().trim().nullable(),
+});
+
+export type ContactDetails = z.input<typeof detailsInput>;
+
+/** Edit name, company and contact info. A new company name links to (or creates) that company. */
+export async function updateContactDetails(id: string, raw: ContactDetails): Promise<{ error?: string }> {
+  const parsed = detailsInput.safeParse(raw);
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check the fields" };
+  const d = parsed.data;
+  const supabase = await createClient();
+
+  const company = d.company ? await upsertCompany(supabase, { name: d.company }) : null;
+  const { error } = await supabase
+    .from("contacts")
+    .update({
+      name: d.name,
+      company_id: company?.id ?? null,
+      role: d.role || null,
+      email: normalizeEmail(d.email || null),
+      phone: d.phone || null,
+      linkedin: normalizeLinkedin(d.linkedin || null),
+      relationship: d.relationship || null,
+      owner: d.owner,
+      notes: d.notes || null,
+    })
+    .eq("id", id);
+  if (error) {
+    // 23505: unique index on email or LinkedIn
+    if (error.code === "23505") return { error: "Another contact already has that email or LinkedIn." };
+    throw new Error(error.message);
+  }
+  revalidatePath("/");
+  return {};
+}
+
+/** Deletes the contact and its visits. Its company stays (other contacts may share it). */
+export async function deleteContact(id: string) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("contacts").delete().eq("id", id);
   if (error) throw new Error(error.message);
   revalidatePath("/");
 }
@@ -112,6 +166,8 @@ export async function logVisit(raw: LogVisitInput) {
 }
 
 const meetingInput = z.object({
+  // Set when editing an existing meeting instead of booking a new one.
+  visit_id: z.uuid().nullish(),
   contact_id: z.uuid(),
   type: z.enum(["meeting", "call"]),
   starts_at: z.iso.datetime({ offset: true }),
@@ -131,17 +187,20 @@ export async function scheduleMeeting(raw: z.input<typeof meetingInput>): Promis
     place = { address: m.address, lat: hit.lat, lng: hit.lng };
   }
 
-  const supabase = await createClient();
-  const { error } = await supabase.from("visits").insert({
+  const row = {
     contact_id: m.contact_id,
-    status: "scheduled",
+    status: "scheduled" as const,
     type: m.type,
     who: m.who,
     starts_at: m.starts_at,
     ends_at: new Date(Date.parse(m.starts_at) + m.duration_min * 60000).toISOString(),
     notes: m.notes || null,
     ...place,
-  });
+  };
+  const supabase = await createClient();
+  const { error } = m.visit_id
+    ? await supabase.from("visits").update(row).eq("id", m.visit_id)
+    : await supabase.from("visits").insert(row);
   if (error) throw new Error(error.message);
 
   // Booking a meeting moves early-stage contacts forward.
