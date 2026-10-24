@@ -41,8 +41,12 @@ export function LogVisitForm({ contact, me, completing, onDone }: Props) {
       stage: (text("stage") as Stage | null),
     };
     const queue = () => {
-      queueVisit({ key: visitId, payload, contactName: contact.name, queuedAt: new Date().toISOString() });
-      onDone("queued");
+      try {
+        queueVisit({ key: visitId, payload, contactName: contact.name, queuedAt: new Date().toISOString() });
+        onDone("queued");
+      } catch (e) {
+        setError((e as Error).message);
+      }
     };
     if (!navigator.onLine) return queue();
 

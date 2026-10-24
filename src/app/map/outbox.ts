@@ -4,11 +4,25 @@ import { useSyncExternalStore } from "react";
 import { logVisit, type LogVisitInput } from "./actions";
 
 // Visit logs made with no signal wait here (in this browser only) and are sent once back online.
+// Each one records who logged it and is only ever sent from that person's session, so a phone
+// shared between Joshua and Colton never syncs one person's visits under the other's login.
 
 const KEY = "crm-map:outbox";
 const EVENT = "crm-map:outbox-changed";
 
-export type QueuedVisit = { key: string; payload: LogVisitInput; contactName: string; queuedAt: string };
+export type QueuedVisit = { key: string; userId: string; payload: LogVisitInput; contactName: string; queuedAt: string };
+
+let currentUser: string | null = null;
+
+/** Set from the signed-in session when the map loads. */
+export function setOutboxUser(userId: string | null) {
+  currentUser = userId;
+  window.dispatchEvent(new Event(EVENT));
+}
+
+function mine(items: QueuedVisit[]) {
+  return currentUser ? items.filter((q) => q.userId === currentUser) : [];
+}
 
 function read(): QueuedVisit[] {
   try {
@@ -27,8 +41,9 @@ function write(items: QueuedVisit[]) {
   window.dispatchEvent(new Event(EVENT));
 }
 
-export function queueVisit(item: QueuedVisit) {
-  write([...read(), item]);
+export function queueVisit(item: Omit<QueuedVisit, "userId">) {
+  if (!currentUser) throw new Error("Not signed in, so the visit can't be saved for later.");
+  write([...read(), { ...item, userId: currentUser }]);
 }
 
 /** True when a failed server action call looks like "no connection" rather than a real error. */
@@ -43,7 +58,7 @@ export function flushOutbox(): Promise<number> {
   flushing ??= (async () => {
     let sent = 0;
     try {
-      for (const item of read()) {
+      for (const item of mine(read())) {
         try {
           await logVisit(item.payload);
         } catch (err) {
@@ -71,7 +86,7 @@ function subscribe(onChange: () => void) {
 }
 
 export function useOutboxCount() {
-  return useSyncExternalStore(subscribe, () => read().length, () => 0);
+  return useSyncExternalStore(subscribe, () => mine(read()).length, () => 0);
 }
 
 function subscribeOnline(onChange: () => void) {

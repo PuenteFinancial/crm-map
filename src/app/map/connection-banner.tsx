@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { formatTime } from "@/lib/time";
-import { flushOutbox, useOnline, useOutboxCount } from "./outbox";
+import { flushOutbox, setOutboxUser, useOnline, useOutboxCount } from "./outbox";
 
 const STALE_MS = 3 * 60 * 1000;
 
@@ -11,11 +11,15 @@ const STALE_MS = 3 * 60 * 1000;
  * Status pill under the top bar: offline, syncing queued visits, or "this is a saved copy"
  * (the service worker served the last saved page because the network was too slow).
  */
-export function ConnectionBanner({ renderedAt }: { renderedAt: number }) {
+export function ConnectionBanner({ renderedAt, userId }: { renderedAt: number; userId: string | null }) {
   const online = useOnline();
   const pending = useOutboxCount();
   const router = useRouter();
   const [stale, setStale] = useState(false);
+
+  useEffect(() => {
+    setOutboxUser(userId);
+  }, [userId]);
 
   // Data rendered a while ago means a saved copy, or an app left open in the background.
   useEffect(() => {

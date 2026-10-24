@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
 import { sendCode, verifyCode, type LoginState } from "./actions";
 
 const initial: LoginState = { step: "email" };
@@ -8,6 +8,13 @@ const initial: LoginState = { step: "email" };
 export default function LoginPage() {
   const [emailState, emailAction, sending] = useActionState(sendCode, initial);
   const [codeState, codeAction, verifying] = useActionState(verifyCode, initial);
+
+  // Reaching this page means there's no session. Pages the service worker saved hold contact
+  // data, so delete them however the session ended (sign-out, expiry, cleared cookies).
+  useEffect(() => {
+    if (!("caches" in window)) return;
+    caches.keys().then((keys) => keys.filter((k) => k.startsWith("pages-")).forEach((k) => caches.delete(k)));
+  }, []);
 
   const onCodeStep = emailState.step === "code";
   const error = onCodeStep ? codeState.error : emailState.error;

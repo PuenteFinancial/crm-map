@@ -50,6 +50,7 @@ async function MapData({ searchParams }: Pick<PageProps<"/">, "searchParams">) {
       me={(meRes.data?.name as Owner | undefined) ?? null}
       initialSelectedId={typeof selected === "string" ? selected : null}
       renderedAt={renderTime()}
+      userId={typeof claims?.claims.sub === "string" ? claims.claims.sub : null}
     />
   );
 }

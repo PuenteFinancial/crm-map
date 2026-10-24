@@ -5,14 +5,15 @@
 // - Everything else (server actions, RSC requests, Supabase, Mapbox) goes straight to the network.
 //   Mapbox caches map tiles it has already shown on its own.
 
-const VERSION = "v1";
+const VERSION = "v2";
 const PAGES = `pages-${VERSION}`;
 const STATIC = `static-${VERSION}`;
 const NETWORK_TIMEOUT_MS = 4000;
 const NO_SAVE = ["/login", "/auth", "/api"];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(PAGES).then((c) => c.add("/offline.html")).then(() => self.skipWaiting()));
+  // The offline page lives with app code so wiping saved pages never removes it.
+  event.waitUntil(caches.open(STATIC).then((c) => c.add("/offline.html")).then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (event) => {
@@ -24,7 +25,8 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// Signing out removes saved pages, which contain contact data.
+// Signing out removes saved pages, which contain contact data. (The login page also deletes
+// them directly, which covers expired sessions and sign-outs this worker never heard about.)
 self.addEventListener("message", (event) => {
   if (event.data === "clear-pages") event.waitUntil(caches.delete(PAGES));
 });
@@ -57,14 +59,18 @@ async function networkFirst(request, url) {
   const key = url.origin + url.pathname;
 
   const network = fetch(request).then((res) => {
-    // A redirect means signed out: don't keep it.
-    if (res.ok && !res.redirected && res.type === "basic") cache.put(key, res.clone());
+    if (res.redirected) {
+      // Sent to the login page: the session is gone, so saved pages must go too.
+      caches.delete(PAGES);
+    } else if (res.ok && res.type === "basic") {
+      cache.put(key, res.clone());
+    }
     return res;
   });
 
   const saved = await cache.match(key);
   if (!saved) {
-    return network.catch(async () => (await cache.match("/offline.html")) ?? Response.error());
+    return network.catch(async () => (await caches.match("/offline.html")) ?? Response.error());
   }
 
   const timeout = new Promise((resolve) => setTimeout(() => resolve(saved), NETWORK_TIMEOUT_MS));

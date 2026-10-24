@@ -39,9 +39,10 @@ type MapAppProps = {
   me: Owner | null;
   initialSelectedId: string | null;
   renderedAt: number;
+  userId: string | null;
 };
 
-export function MapApp({ contacts, meetings, me, initialSelectedId, renderedAt }: MapAppProps) {
+export function MapApp({ contacts, meetings, me, initialSelectedId, renderedAt, userId }: MapAppProps) {
   const [selectedId, setSelectedIdState] = useState<string | null>(initialSelectedId);
   const [filters, setFilters] = useState<Filters>(ALL_FILTERS);
   const [query, setQuery] = useState("");
@@ -257,7 +258,7 @@ export function MapApp({ contacts, meetings, me, initialSelectedId, renderedAt }
             )}
           </div>
         )}
-        <ConnectionBanner renderedAt={renderedAt} />
+        <ConnectionBanner renderedAt={renderedAt} userId={userId} />
         {locating && (
           <p className="pointer-events-auto self-start rounded-full bg-neutral-900 px-3 py-1.5 text-sm text-white">
             {locating}
