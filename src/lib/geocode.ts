@@ -75,6 +75,7 @@ function toConfidence(feature: MapboxFeature, query: string): GeocodeConfidence 
   const { feature_type: type, match_code: match, name } = feature.properties;
   switch (type) {
     case "address":
+    case "secondary_address": // a suite/unit inside a building: at least as precise as the address
       // A "plausible" house number on a matched street is placed by interpolation along that
       // street, so it's close enough to drive to even though Mapbox rates the match low.
       if (match?.street === "unmatched") return "low";
