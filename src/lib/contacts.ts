@@ -15,6 +15,7 @@ export type MapContact = {
   stage: Stage | null;
   owner: Owner | null;
   relationship: string | null;
+  source: string | null;
   notes: string | null;
   address: string | null;
   map_lat: number | null;
@@ -28,7 +29,21 @@ export type MapContact = {
 
 export const CONTACT_COLUMNS =
   "id, name, company_id, company_name, role, email, phone, linkedin, category, priority, stage, owner, " +
-  "relationship, notes, address, map_lat, map_lng, geocode_confidence, location_from_company, needs_review";
+  "relationship, source, notes, address, map_lat, map_lng, geocode_confidence, location_from_company, needs_review";
+
+/**
+ * Which list a contact came in with, for the List filter. Imports record their source as
+ * "sheet: <name> (<detail>)" or "csv: <file>"; the name is the list.
+ */
+export function listName(source: string | null) {
+  if (!source) return "Other";
+  const imported = source.match(/^(?:sheet|csv):\s*(.+?)(?:\s*\([^)]*\))?$/i);
+  if (imported) return imported[1].replace(/\.csv$/i, "");
+  if (source.startsWith("search-brain")) return "Search brain";
+  if (source.startsWith("claude")) return "Paste / photo";
+  if (source === "quick-add") return "Quick add";
+  return "Other";
+}
 
 export type Visit = {
   id: string;

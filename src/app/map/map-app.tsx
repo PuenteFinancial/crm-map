@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
-import { CATEGORY_LABELS, PRIORITY_LABELS, type MapContact, type Meeting } from "@/lib/contacts";
+import { CATEGORY_LABELS, PRIORITY_LABELS, listName, type MapContact, type Meeting } from "@/lib/contacts";
 import { CATEGORIES, PRIORITIES, type Category, type Owner, type Priority } from "@/lib/types";
 import { signOut } from "../login/actions";
 import { setPin } from "./actions";
@@ -20,6 +20,8 @@ import { Dot } from "./ui";
 const MapView = dynamic(() => import("./map-view"), { ssr: false });
 
 type Filters = {
+  /** Lists (import sources) to show; empty means all. */
+  lists: Set<string>;
   categories: Set<Category>;
   priorities: Set<Priority>;
   owner: Owner | "all";
@@ -27,6 +29,7 @@ type Filters = {
 };
 
 const ALL_FILTERS: Filters = {
+  lists: new Set(),
   categories: new Set(CATEGORIES),
   priorities: new Set(PRIORITIES),
   owner: "all",
@@ -77,6 +80,7 @@ export function MapApp({ contacts, meetings, me, initialSelectedId, renderedAt, 
     () =>
       contacts.filter(
         (c) =>
+          (filters.lists.size === 0 || filters.lists.has(listName(c.source))) &&
           filters.categories.has(c.category) &&
           filters.priorities.has(c.priority) &&
           (filters.owner === "all" || c.owner === filters.owner) &&
@@ -100,10 +104,17 @@ export function MapApp({ contacts, meetings, me, initialSelectedId, renderedAt, 
   }, [contacts, query, listOpen]);
 
   const byId = useMemo(() => new Map(contacts.map((c) => [c.id, c])), [contacts]);
+  // Lists contacts came in with, biggest first.
+  const lists = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const c of contacts) counts.set(listName(c.source), (counts.get(listName(c.source)) ?? 0) + 1);
+    return [...counts].sort((a, b) => b[1] - a[1]);
+  }, [contacts]);
   const needsPin = contacts.filter((c) => c.needs_review);
   const selected = contacts.find((c) => c.id === selectedId) ?? null;
   const placing = contacts.find((c) => c.id === placingId) ?? null;
   const activeFilterCount =
+    (filters.lists.size > 0 ? 1 : 0) +
     CATEGORIES.length - filters.categories.size +
     (PRIORITIES.length - filters.priorities.size) +
     (filters.owner === "all" ? 0 : 1) +
@@ -292,6 +303,18 @@ export function MapApp({ contacts, meetings, me, initialSelectedId, renderedAt, 
 
         {panel === "filters" && (
           <Panel>
+            {lists.length > 1 && (
+              <FilterGroup label="List">
+                <Chip on={filters.lists.size === 0} onClick={() => setFilters({ ...filters, lists: new Set() })}>
+                  All
+                </Chip>
+                {lists.map(([name, count]) => (
+                  <Chip key={name} on={filters.lists.has(name)} onClick={() => setFilters({ ...filters, lists: toggle(filters.lists, name) })}>
+                    {name} <span className="opacity-60">{count}</span>
+                  </Chip>
+                ))}
+              </FilterGroup>
+            )}
             <FilterGroup label="Category">
               {CATEGORIES.map((c) => (
                 <Chip key={c} on={filters.categories.has(c)} onClick={() => setFilters({ ...filters, categories: toggle(filters.categories, c) })}>
