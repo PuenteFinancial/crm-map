@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
-import { CATEGORY_LABELS, PRIORITY_LABELS, listName, type MapContact, type Meeting } from "@/lib/contacts";
+import { CATEGORY_LABELS, PRIORITY_LABELS, contactLists, type MapContact, type Meeting } from "@/lib/contacts";
 import { CATEGORIES, PRIORITIES, type Category, type Owner, type Priority } from "@/lib/types";
 import { signOut } from "../login/actions";
 import { setPin } from "./actions";
@@ -80,7 +80,7 @@ export function MapApp({ contacts, meetings, me, initialSelectedId, renderedAt, 
     () =>
       contacts.filter(
         (c) =>
-          (filters.lists.size === 0 || filters.lists.has(listName(c.source))) &&
+          (filters.lists.size === 0 || contactLists(c).some((l) => filters.lists.has(l))) &&
           filters.categories.has(c.category) &&
           filters.priorities.has(c.priority) &&
           (filters.owner === "all" || c.owner === filters.owner) &&
@@ -107,7 +107,7 @@ export function MapApp({ contacts, meetings, me, initialSelectedId, renderedAt, 
   // Lists contacts came in with, biggest first.
   const lists = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const c of contacts) counts.set(listName(c.source), (counts.get(listName(c.source)) ?? 0) + 1);
+    for (const c of contacts) for (const l of contactLists(c)) counts.set(l, (counts.get(l) ?? 0) + 1);
     return [...counts].sort((a, b) => b[1] - a[1]);
   }, [contacts]);
   const needsPin = contacts.filter((c) => c.needs_review);

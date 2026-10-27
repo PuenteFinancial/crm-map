@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { listName } from "./contacts";
 import { geocode, type GeocodeResult } from "./geocode";
 import { CATEGORIES, COMPANY_KINDS, OWNERS, PRIORITIES, STAGES, type GeocodeConfidence } from "./types";
 
@@ -44,6 +45,8 @@ export const contactInputSchema = z.object({
   lat: z.number().min(-90).max(90).nullish(),
   lng: z.number().min(-180).max(180).nullish(),
   brain_slug: optionalText,
+  /** List to file the contact under (see the List filter). Defaults to one named after `source`. */
+  list: optionalText,
 });
 
 export type CompanyInput = z.input<typeof companyInputSchema>;
@@ -52,10 +55,12 @@ export type ContactInput = z.input<typeof contactInputSchema>;
 /** skip: report duplicates and stop. merge: fill the existing record's empty fields. force: insert despite a name match. */
 export type OnDuplicate = "skip" | "merge" | "force";
 
+type MatchedOn = "brain_slug" | "email" | "linkedin" | "name" | "company";
+
 export type IngestResult =
   | { status: "created"; id: string; name: string; needsReview: boolean; geocode: GeocodeConfidence | null }
   | { status: "merged"; id: string; name: string; fields: string[] }
-  | { status: "duplicate"; id: string; name: string; matchedOn: "brain_slug" | "email" | "linkedin" | "name" }
+  | { status: "duplicate"; id: string; name: string; matchedOn: MatchedOn }
   | { status: "error"; name: string; error: string };
 
 type Located = { lat: number | null; lng: number | null; geocode_confidence: GeocodeConfidence | null };
@@ -161,11 +166,20 @@ async function findDuplicate(db: SupabaseClient, c: z.output<typeof contactInput
   byName = companyId ? byName.eq("company_id", companyId) : byName.is("company_id", null);
   const { data, error } = await byName.limit(1);
   if (error) throw error;
-  return data?.[0] ? { row: data[0], matchedOn: "name" as const } : null;
+  if (data?.[0]) return { row: data[0], matchedOn: "name" as const };
+
+  // A brand-only entry (named after its company) is the same lead as anyone already saved at
+  // that company, e.g. "SAME Los Angeles" vs its founder from an earlier list.
+  if (companyId && c.company && c.name.trim().toLowerCase() === c.company.trim().toLowerCase()) {
+    const { data: atCompany, error: companyError } = await db.from("contacts").select("*").eq("company_id", companyId).limit(1);
+    if (companyError) throw companyError;
+    if (atCompany?.[0]) return { row: atCompany[0], matchedOn: "company" as const };
+  }
+  return null;
 }
 
 export type ContactPreview = {
-  duplicate: { id: string; name: string; matchedOn: "brain_slug" | "email" | "linkedin" | "name" } | null;
+  duplicate: { id: string; name: string; matchedOn: MatchedOn } | null;
   /** Where the contact would land on the map, without saving anything. */
   location: { placeName: string; confidence: GeocodeConfidence; viaCompany: boolean } | null;
 };
@@ -221,6 +235,7 @@ export async function ingestContact(
     email: normalizeEmail(parsed.data.email),
     linkedin: normalizeLinkedin(parsed.data.linkedin),
   };
+  const list = c.list ?? listName(c.source);
 
   try {
     const company = c.company
@@ -235,6 +250,8 @@ export async function ingestContact(
       const patch: Record<string, unknown> = {};
       for (const key of MERGEABLE) if (c[key] && !dup.row[key]) patch[key] = c[key];
       if (company && !dup.row.company_id) patch.company_id = company.id;
+      // Already saved from another list: it's on this one too now.
+      if (!(dup.row.lists ?? []).includes(list)) patch.lists = [...(dup.row.lists ?? []), list];
       if ((c.address || c.lat != null) && dup.row.lat == null) {
         const loc = await locate(c.address, c.lat, c.lng);
         Object.assign(patch, { address: c.address ?? dup.row.address }, loc, {
@@ -270,6 +287,7 @@ export async function ingestContact(
         notes: c.notes,
         address: c.address,
         brain_slug: c.brain_slug,
+        lists: [list],
         ...loc,
         needs_review: needsReview(effective),
       })

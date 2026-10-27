@@ -16,6 +16,8 @@ export type MapContact = {
   owner: Owner | null;
   relationship: string | null;
   source: string | null;
+  /** Lists the contact is on (a contact can come in with several imports). */
+  lists: string[];
   notes: string | null;
   address: string | null;
   map_lat: number | null;
@@ -29,7 +31,12 @@ export type MapContact = {
 
 export const CONTACT_COLUMNS =
   "id, name, company_id, company_name, role, email, phone, linkedin, category, priority, stage, owner, " +
-  "relationship, source, notes, address, map_lat, map_lng, geocode_confidence, location_from_company, needs_review";
+  "relationship, source, lists, notes, address, map_lat, map_lng, geocode_confidence, location_from_company, needs_review";
+
+/** Lists for the filter; falls back to the source for any contact saved without one. */
+export function contactLists(c: Pick<MapContact, "lists" | "source">) {
+  return c.lists?.length ? c.lists : [listName(c.source)];
+}
 
 /**
  * Which list a contact came in with, for the List filter. Imports record their source as
