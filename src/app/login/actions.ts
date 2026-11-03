@@ -31,16 +31,24 @@ const WINDOW_MINUTES = 15;
 const MAX_PER_IP = 10;
 const MAX_OVERALL = 100;
 
+/** IPv6 clients usually control a whole /64, so treat that block as one client. */
+function rateLimitKey(ip: string) {
+  if (!ip.includes(":")) return ip;
+  const groups = ip.split("%")[0].split("::");
+  const head = groups[0].split(":").filter(Boolean);
+  const tail = groups.length > 1 ? groups[1].split(":").filter(Boolean) : [];
+  const full = [...head, ...Array(8 - head.length - tail.length).fill("0"), ...tail];
+  return `${full.slice(0, 4).join(":")}::/64`;
+}
+
 async function clientIp() {
   const h = await headers();
-  // x-vercel-forwarded-for is set by Vercel's edge and can't be supplied by the client; the
-  // others are fallbacks for local dev and other hosts.
-  return (
-    h.get("x-vercel-forwarded-for")?.split(",")[0].trim() ||
-    h.get("x-real-ip") ||
-    h.get("x-forwarded-for")?.split(",")[0].trim() ||
-    "unknown"
-  );
+  // On Vercel, only x-vercel-forwarded-for: its edge sets it and clients can't. The other headers
+  // are client-settable, so they're only used off Vercel (local dev).
+  const ip = process.env.VERCEL
+    ? h.get("x-vercel-forwarded-for")?.split(",")[0].trim()
+    : h.get("x-real-ip") || h.get("x-forwarded-for")?.split(",")[0].trim();
+  return rateLimitKey(ip || "unknown");
 }
 
 /**
@@ -53,8 +61,9 @@ async function recordAttemptAndCheck(ip: string, email: string): Promise<number 
   const now = Date.now();
   const windowStart = new Date(now - WINDOW_MINUTES * 60_000).toISOString();
 
-  // Keep the table small; anything older than a day no longer matters.
-  await db.from("login_attempts").delete().lt("at", new Date(now - 24 * 60 * 60_000).toISOString());
+  // Keep the table small: failures matter for a day, successes for 30 (see below).
+  await db.from("login_attempts").delete().eq("ok", false).lt("at", new Date(now - 24 * 60 * 60_000).toISOString());
+  await db.from("login_attempts").delete().eq("ok", true).lt("at", new Date(now - 30 * 24 * 60 * 60_000).toISOString());
 
   const { data: row, error } = await db.from("login_attempts").insert({ ip, email }).select("id").single();
   if (error) throw error;
@@ -72,6 +81,10 @@ async function recordAttemptAndCheck(ip: string, email: string): Promise<number 
     await db.from("login_attempts").delete().eq("id", row.id);
     return null;
   }
+
+  // An IP that signed in successfully in the last 30 days skips the overall cap, so a flood of
+  // failures from elsewhere can't lock Joshua or Colton out of their own devices.
+  if (lastOk?.length) return row.id;
 
   const overall = await db.from("login_attempts").select("id", { count: "exact", head: true })
     .eq("ok", false).gte("at", windowStart);
