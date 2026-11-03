@@ -23,8 +23,9 @@ async function ensureUser(email: string) {
 
 // The passcode is the shared secret, so guesses are limited per client IP and overall, never per
 // submitted email (an attacker can vary that freely). At most ~100 guesses per 15 minutes makes a
-// 12+ character passcode impractical to guess. The overall cap means a flood of bad attempts can
-// pause new sign-ins for everyone for 15 minutes; signed-in sessions are unaffected.
+// 12+ character passcode impractical to guess. Attempts over an IP's own limit don't count toward
+// the overall cap, so pausing sign-in for everyone takes 10+ separate IPs; signed-in sessions are
+// never affected.
 const MIN_PASSCODE_LENGTH = 12;
 const WINDOW_MINUTES = 15;
 const MAX_PER_IP = 10;
@@ -32,29 +33,55 @@ const MAX_OVERALL = 100;
 
 async function clientIp() {
   const h = await headers();
-  return h.get("x-forwarded-for")?.split(",")[0].trim() || h.get("x-real-ip") || "unknown";
+  // x-vercel-forwarded-for is set by Vercel's edge and can't be supplied by the client; the
+  // others are fallbacks for local dev and other hosts.
+  return (
+    h.get("x-vercel-forwarded-for")?.split(",")[0].trim() ||
+    h.get("x-real-ip") ||
+    h.get("x-forwarded-for")?.split(",")[0].trim() ||
+    "unknown"
+  );
 }
 
 /**
  * Records this attempt first, then counts, so parallel requests can't all slip past the check:
- * each one sees every attempt inserted before its count, including its own.
+ * each one sees every attempt inserted before its count, including its own. Returns the attempt's
+ * id when it may go ahead, or null when it's over a limit.
  */
-async function recordAttemptAndCheck(ip: string, email: string) {
+async function recordAttemptAndCheck(ip: string, email: string): Promise<number | null> {
   const db = createAdminClient();
-  const { error } = await db.from("login_attempts").insert({ ip, email });
+  const now = Date.now();
+  const windowStart = new Date(now - WINDOW_MINUTES * 60_000).toISOString();
+
+  // Keep the table small; anything older than a day no longer matters.
+  await db.from("login_attempts").delete().lt("at", new Date(now - 24 * 60 * 60_000).toISOString());
+
+  const { data: row, error } = await db.from("login_attempts").insert({ ip, email }).select("id").single();
   if (error) throw error;
-  const since = new Date(Date.now() - WINDOW_MINUTES * 60_000).toISOString();
-  const [byIp, overall] = await Promise.all([
-    db.from("login_attempts").select("id", { count: "exact", head: true }).eq("ip", ip).gte("at", since),
-    db.from("login_attempts").select("id", { count: "exact", head: true }).gte("at", since),
-  ]);
+
+  // Per IP: failures since the later of the window start and that IP's last successful sign-in.
+  const { data: lastOk, error: okError } = await db
+    .from("login_attempts").select("at").eq("ip", ip).eq("ok", true).order("at", { ascending: false }).limit(1);
+  if (okError) throw okError;
+  const ipSince = lastOk?.[0]?.at && lastOk[0].at > windowStart ? lastOk[0].at : windowStart;
+  const byIp = await db.from("login_attempts").select("id", { count: "exact", head: true })
+    .eq("ip", ip).eq("ok", false).gt("at", ipSince);
   if (byIp.error) throw byIp.error;
+  if ((byIp.count ?? 0) > MAX_PER_IP) {
+    // Over this IP's own limit: don't let it count toward everyone else's overall cap.
+    await db.from("login_attempts").delete().eq("id", row.id);
+    return null;
+  }
+
+  const overall = await db.from("login_attempts").select("id", { count: "exact", head: true })
+    .eq("ok", false).gte("at", windowStart);
   if (overall.error) throw overall.error;
-  return (byIp.count ?? 0) <= MAX_PER_IP && (overall.count ?? 0) <= MAX_OVERALL;
+  return (overall.count ?? 0) <= MAX_OVERALL ? row.id : null;
 }
 
-async function clearAttempts(ip: string) {
-  const { error } = await createAdminClient().from("login_attempts").delete().eq("ip", ip);
+/** A successful sign-in marks its own attempt ok; nothing is deleted, so the overall count stays honest. */
+async function markAttemptOk(id: number) {
+  const { error } = await createAdminClient().from("login_attempts").update({ ok: true }).eq("id", id);
   if (error) throw error;
 }
 
@@ -82,7 +109,8 @@ export async function signIn(_prev: LoginState, form: FormData): Promise<LoginSt
   }
 
   const ip = await clientIp();
-  if (!(await recordAttemptAndCheck(ip, email))) {
+  const attemptId = await recordAttemptAndCheck(ip, email);
+  if (attemptId === null) {
     return { email, error: `Too many sign-in attempts. Try again in ${WINDOW_MINUTES} minutes.` };
   }
 
@@ -90,7 +118,7 @@ export async function signIn(_prev: LoginState, form: FormData): Promise<LoginSt
     await slowDown();
     return { email, error: "That email or passcode isn't right." };
   }
-  await clearAttempts(ip);
+  await markAttemptOk(attemptId);
 
   await ensureUser(email);
   // Mint a one-time sign-in token server-side (nothing is emailed) and redeem it right away,
