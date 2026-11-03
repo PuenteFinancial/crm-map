@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
-import { CATEGORY_LABELS, PRIORITY_LABELS, contactLists, type MapContact, type Meeting } from "@/lib/contacts";
+import { CATEGORY_LABELS, PRIORITY_LABELS, contactLists, displayName, personLine, type MapContact, type Meeting } from "@/lib/contacts";
 import { CATEGORIES, PRIORITIES, type Category, type Owner, type Priority } from "@/lib/types";
 import { signOut } from "../login/actions";
 import { setPin } from "./actions";
@@ -136,14 +136,14 @@ export function MapApp({ contacts, meetings, me, initialSelectedId, renderedAt, 
 
   function nearContact(c: MapContact) {
     if (c.map_lat == null || c.map_lng == null) return;
-    showNearby({ label: c.name, lat: c.map_lat, lng: c.map_lng, contactId: c.id });
+    showNearby({ label: displayName(c), lat: c.map_lat, lng: c.map_lng, contactId: c.id });
   }
 
   function nearMeeting(m: Meeting) {
     const c = byId.get(m.contact_id);
     const place = meetingLocation(m, c);
     if (!place) return;
-    showNearby({ label: `meeting with ${c?.name ?? "contact"}`, ...place, contactId: m.contact_id });
+    showNearby({ label: `meeting with ${c ? displayName(c) : "contact"}`, ...place, contactId: m.contact_id });
   }
 
   function nearMe() {
@@ -212,8 +212,8 @@ export function MapApp({ contacts, meetings, me, initialSelectedId, renderedAt, 
                     >
                       <Dot category={c.category} />
                       <span className="flex-1 truncate">
-                        {c.name}
-                        {c.company_name && <span className="text-neutral-500"> · {c.company_name}</span>}
+                        {displayName(c)}
+                        {personLine(c) && <span className="text-neutral-500"> · {personLine(c)}</span>}
                       </span>
                       {c.map_lat == null && <span className="text-xs text-amber-700">no pin</span>}
                     </button>
@@ -381,8 +381,8 @@ export function MapApp({ contacts, meetings, me, initialSelectedId, renderedAt, 
                   >
                     <Dot category={c.category} />
                     <span className="flex-1 truncate">
-                      {c.name}
-                      {c.company_name && <span className="text-neutral-500"> · {c.company_name}</span>}
+                      {displayName(c)}
+                      {personLine(c) && <span className="text-neutral-500"> · {personLine(c)}</span>}
                     </span>
                     <span className="text-xs text-neutral-500">{c.map_lat == null ? "no pin" : "rough"}</span>
                   </button>
@@ -414,7 +414,7 @@ export function MapApp({ contacts, meetings, me, initialSelectedId, renderedAt, 
       {placing && (
         <div className="absolute inset-x-3 bottom-[max(1rem,env(safe-area-inset-bottom))] flex items-center gap-3 rounded-xl bg-neutral-900 px-4 py-3 text-white shadow-lg">
           <p className="flex-1 text-sm">
-            {saving ? "Saving…" : <>Tap the map where <strong>{placing.name}</strong> is.</>}
+            {saving ? "Saving…" : <>Tap the map where <strong>{displayName(placing)}</strong> is.</>}
           </p>
           <button onClick={() => setPlacingId(null)} className="text-sm underline">Cancel</button>
         </div>

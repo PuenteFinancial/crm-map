@@ -3,6 +3,8 @@
 import { useEffect, useState, useTransition } from "react";
 import {
   CATEGORY_LABELS,
+  displayName,
+  personLine,
   PRIORITY_LABELS,
   googleMapsDirections,
   type MapContact,
@@ -92,9 +94,9 @@ export function ContactSheet({ contact: c, me, onClose, onPlacePin, onNearby, in
         )}
         <header className="flex items-start gap-3">
           <div className="flex-1">
-            <h2 className="text-lg font-semibold leading-tight">{c.name}</h2>
+            <h2 className="text-lg font-semibold leading-tight">{displayName(c)}</h2>
             <p className="text-sm text-neutral-500">
-              {[c.role, c.company_name].filter(Boolean).join(" · ") || "No role or company yet"}
+              {personLine(c) || (c.company_name ? "No contact person yet" : "No company yet")}
             </p>
             {c.next_meeting_at && (
               <p className="mt-1 text-sm font-medium text-amber-700">Meeting {formatWhen(c.next_meeting_at)}</p>

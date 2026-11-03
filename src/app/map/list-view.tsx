@@ -1,18 +1,18 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CATEGORY_LABELS, PRIORITY_LABELS, type MapContact } from "@/lib/contacts";
+import { CATEGORY_LABELS, PRIORITY_LABELS, displayName, personLine, type MapContact } from "@/lib/contacts";
 import { dayKey, formatDay } from "@/lib/time";
 import { STAGES } from "@/lib/types";
 import { Dot } from "./ui";
 import type { DayPlanState } from "./use-day-plan";
 
-type SortKey = "priority" | "name" | "company" | "stage" | "last-visit";
+type SortKey = "priority" | "name" | "person" | "stage" | "last-visit";
 
 const SORTS: { key: SortKey; label: string }[] = [
   { key: "priority", label: "Priority" },
   { key: "name", label: "Name" },
-  { key: "company", label: "Company" },
+  { key: "person", label: "Contact person" },
   { key: "stage", label: "Stage" },
   { key: "last-visit", label: "Not visited first" },
 ];
@@ -21,15 +21,16 @@ const PRIORITY_RANK = { "must-see": 0, "want-to-see": 1, "if-nearby": 2 } as con
 const STAGE_RANK = Object.fromEntries(STAGES.map((s, i) => [s, i])) as Record<string, number>;
 
 function compare(sort: SortKey) {
-  const byName = (a: MapContact, b: MapContact) => a.name.localeCompare(b.name);
+  const byName = (a: MapContact, b: MapContact) => displayName(a).localeCompare(displayName(b));
   switch (sort) {
     case "priority":
       return (a: MapContact, b: MapContact) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || byName(a, b);
     case "name":
       return byName;
-    case "company":
+    case "person":
+      // Contacts with a named person first, by that person.
       return (a: MapContact, b: MapContact) =>
-        (a.company_name ?? "￿").localeCompare(b.company_name ?? "￿") || byName(a, b);
+        (personLine(a) ? a.name : "￿").localeCompare(personLine(b) ? b.name : "￿") || byName(a, b);
     case "stage":
       return (a: MapContact, b: MapContact) =>
         (a.stage ? STAGE_RANK[a.stage] : -1) - (b.stage ? STAGE_RANK[b.stage] : -1) || byName(a, b);
@@ -100,7 +101,7 @@ export function ListView({ contacts, total, plan, onOpen, onOpenPlan }: Props) {
             <li key={c.id} className="flex items-stretch border-b border-neutral-100">
               <button
                 onClick={() => plan.toggle(c.id)}
-                aria-label={on ? `Remove ${c.name} from plan` : `Add ${c.name} to plan`}
+                aria-label={on ? `Remove ${displayName(c)} from plan` : `Add ${displayName(c)} to plan`}
                 className="flex w-12 shrink-0 items-center justify-center"
               >
                 <span
@@ -114,11 +115,11 @@ export function ListView({ contacts, total, plan, onOpen, onOpenPlan }: Props) {
               <button onClick={() => onOpen(c.id)} className="flex min-w-0 flex-1 flex-col gap-0.5 py-2.5 pr-3 text-left">
                 <span className="flex items-center gap-2">
                   <Dot category={c.category} />
-                  <span className="truncate font-medium">{c.name}</span>
+                  <span className="truncate font-medium">{displayName(c)}</span>
                   {c.next_meeting_at && <span className="shrink-0 text-xs text-amber-700">📅</span>}
                 </span>
                 <span className="truncate text-sm text-neutral-500">
-                  {[c.role, c.company_name].filter(Boolean).join(" · ") || CATEGORY_LABELS[c.category]}
+                  {personLine(c) || CATEGORY_LABELS[c.category]}
                 </span>
                 <span className="flex flex-wrap gap-x-2 text-xs text-neutral-500">
                   <span className={c.priority === "must-see" ? "font-medium text-neutral-800" : ""}>{PRIORITY_LABELS[c.priority]}</span>

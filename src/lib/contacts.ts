@@ -33,6 +33,20 @@ export const CONTACT_COLUMNS =
   "id, name, company_id, company_name, role, email, phone, linkedin, category, priority, stage, owner, " +
   "relationship, source, lists, notes, address, map_lat, map_lng, geocode_confidence, location_from_company, needs_review";
 
+type Named = { name: string; company_name: string | null; role?: string | null };
+
+/** Main label everywhere: the business when there is one (it's what's on the door), else the person. */
+export function displayName(c: Named) {
+  return c.company_name || c.name;
+}
+
+/** Second line under the business: who to ask for, and their role. Null when there's nothing to add. */
+export function personLine(c: Named) {
+  if (!c.company_name) return c.role || null;
+  if (c.name.trim().toLowerCase() === c.company_name.trim().toLowerCase()) return c.role || null;
+  return [c.name, c.role].filter(Boolean).join(" · ");
+}
+
 /** Lists for the filter; falls back to the source for any contact saved without one. */
 export function contactLists(c: Pick<MapContact, "lists" | "source">) {
   return c.lists?.length ? c.lists : [listName(c.source)];

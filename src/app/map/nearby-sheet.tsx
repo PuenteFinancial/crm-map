@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { METERS_PER_MILE, PRIORITY_LABELS, distanceMeters, type MapContact } from "@/lib/contacts";
+import { METERS_PER_MILE, PRIORITY_LABELS, displayName, distanceMeters, personLine, type MapContact } from "@/lib/contacts";
 import { BottomSheet } from "./bottom-sheet";
 import { Dot } from "./ui";
 
@@ -103,9 +103,9 @@ export function NearbySheet(props: Props) {
             >
               <Dot category={c.category} />
               <span className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate font-medium">{c.name}</span>
+                <span className="truncate font-medium">{displayName(c)}</span>
                 <span className="truncate text-xs text-neutral-500">
-                  {[c.company_name, PRIORITY_LABELS[c.priority], c.last_visit_at ? "visited" : null]
+                  {[personLine(c), PRIORITY_LABELS[c.priority], c.last_visit_at ? "visited" : null]
                     .filter(Boolean)
                     .join(" · ")}
                 </span>
@@ -116,7 +116,7 @@ export function NearbySheet(props: Props) {
             </button>
             <button
               onClick={() => onTogglePick(c.id)}
-              aria-label={isPicked(c.id) ? `Remove ${c.name} from plan` : `Add ${c.name} to plan`}
+              aria-label={isPicked(c.id) ? `Remove ${displayName(c)} from plan` : `Add ${displayName(c)} to plan`}
               className={`shrink-0 rounded-full border px-2.5 py-1 text-sm ${
                 isPicked(c.id) ? "border-green-600 bg-green-50 text-green-800" : "border-neutral-300"
               }`}

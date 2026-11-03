@@ -75,17 +75,19 @@ export async function optimizePlan(day: string, picks: string[], rawSettings: Pl
       .eq("status", "scheduled")
       .gte("starts_at", wallTimeToIso(`${day}T00:00`))
       .lt("starts_at", wallTimeToIso(`${day}T23:59`)),
-    supabase.from("contacts_located").select("id, name, priority, map_lat, map_lng"),
+    supabase.from("contacts_located").select("id, name, company_name, priority, map_lat, map_lng"),
   ]);
   if (meetingsRes.error) throw new Error(meetingsRes.error.message);
   if (contactsRes.error) throw new Error(contactsRes.error.message);
 
   const byId = new Map(contactsRes.data.map((c) => [c.id as string, c]));
+  // Stops are places: label them with the business, else the person.
+  const label = (c: { name: unknown; company_name: unknown }) => ((c.company_name || c.name) as string);
   const warnings: string[] = [];
   const meetings: PlanMeeting[] = [];
   for (const v of meetingsRes.data) {
     const c = byId.get(v.contact_id);
-    const name = (c?.name as string) ?? "Meeting";
+    const name = c ? label(c) : "Meeting";
     if (v.type === "call") continue; // calls don't move you
     const lat = v.lat ?? c?.map_lat;
     const lng = v.lng ?? c?.map_lng;
@@ -102,10 +104,10 @@ export async function optimizePlan(day: string, picks: string[], rawSettings: Pl
   const contacts = ids.flatMap((id) => {
     const c = byId.get(id);
     if (!c || c.map_lat == null || c.map_lng == null) {
-      if (c) warnings.push(`${c.name} has no location yet, so it's left out.`);
+      if (c) warnings.push(`${label(c)} has no location yet, so it's left out.`);
       return [];
     }
-    return [{ id, name: c.name as string, priority: c.priority as Priority, lat: c.map_lat as number, lng: c.map_lng as number }];
+    return [{ id, name: label(c), priority: c.priority as Priority, lat: c.map_lat as number, lng: c.map_lng as number }];
   });
 
   const result = await planDay({ dayStartIso, dayEndIso, settings, meetings, contacts }, routeSegment, routePath);

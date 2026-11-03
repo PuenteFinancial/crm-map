@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import type { MapContact } from "@/lib/contacts";
+import { displayName, type MapContact } from "@/lib/contacts";
 import { OWNERS } from "@/lib/types";
 import { deleteContact, updateContactDetails } from "./actions";
 
@@ -43,7 +43,8 @@ export function EditContactForm({ contact: c, onDone, onDeleted }: Props) {
   }
 
   function remove() {
-    if (!window.confirm(`Delete ${c.name}? Their visit history goes too. This can't be undone.`)) return;
+    const who = c.company_name && c.name !== c.company_name ? `${displayName(c)} (${c.name})` : displayName(c);
+    if (!window.confirm(`Delete ${who}? Their visit history goes too. This can't be undone.`)) return;
     startTransition(async () => {
       try {
         await deleteContact(c.id);
@@ -61,7 +62,7 @@ export function EditContactForm({ contact: c, onDone, onDeleted }: Props) {
         <button type="button" onClick={onDone} className="text-sm text-neutral-500">Cancel</button>
       </div>
       <label className={label}>
-        Name
+        Contact person (or the business name if there isn&apos;t one)
         <input name="name" defaultValue={c.name} required className={field} />
       </label>
       <div className="grid grid-cols-2 gap-2">

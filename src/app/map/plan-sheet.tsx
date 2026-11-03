@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { PRIORITY_LABELS, type MapContact, type Meeting } from "@/lib/contacts";
+import { PRIORITY_LABELS, displayName, personLine, type MapContact, type Meeting } from "@/lib/contacts";
 import { googleMapsLinks, type RouteStop } from "@/lib/route";
 import { dayKey, formatDay, formatTime } from "@/lib/time";
 import { BottomSheet } from "./bottom-sheet";
@@ -125,11 +125,11 @@ export function PlanSheet({ plan, contacts, meetings, onOpenContact, onClose, me
                     <li key={c.id} className="flex items-center gap-2 border-b border-neutral-100 py-1.5 text-sm last:border-0">
                       <Dot category={c.category} />
                       <button onClick={() => onOpenContact(c.id)} className="min-w-0 flex-1 truncate text-left">
-                        {c.name}
+                        {displayName(c)}
                         <span className="text-neutral-500"> · {PRIORITY_LABELS[c.priority]}</span>
                         {c.map_lat == null && <span className="text-amber-700"> · no location</span>}
                       </button>
-                      <button onClick={() => plan.toggle(c.id)} className="px-1 text-neutral-400" aria-label={`Remove ${c.name}`}>
+                      <button onClick={() => plan.toggle(c.id)} className="px-1 text-neutral-400" aria-label={`Remove ${displayName(c)}`}>
                         ✕
                       </button>
                     </li>
@@ -276,8 +276,8 @@ function ContactPicker({ plan, contacts, onDone }: { plan: DayPlanState; contact
                 </span>
                 <Dot category={c.category} />
                 <span className="min-w-0 flex-1 truncate">
-                  {c.name}
-                  {c.company_name && <span className="text-neutral-500"> · {c.company_name}</span>}
+                  {displayName(c)}
+                  {personLine(c) && <span className="text-neutral-500"> · {personLine(c)}</span>}
                 </span>
                 <span className="shrink-0 text-xs text-neutral-500">{PRIORITY_LABELS[c.priority]}</span>
               </button>

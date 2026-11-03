@@ -1,6 +1,6 @@
 "use client";
 
-import type { MapContact, Meeting } from "@/lib/contacts";
+import { displayName, personLine, type MapContact, type Meeting } from "@/lib/contacts";
 import { dayKey, formatDay, formatTime, nowWallTime } from "@/lib/time";
 
 type Props = {
@@ -49,10 +49,10 @@ export function AgendaPanel({ meetings, contacts, onOpen, onNearby, onClose }: P
                   <button onClick={() => onOpen(m.contact_id)} className="min-w-0 flex-1 text-left">
                     <span className="block truncate font-medium">
                       {m.type === "call" ? "📞 " : ""}
-                      {c?.name ?? "Unknown contact"}
+                      {c ? displayName(c) : "Unknown contact"}
                     </span>
                     <span className="block truncate text-xs text-neutral-500">
-                      {[c?.company_name, m.address].filter(Boolean).join(" · ")}
+                      {[c && personLine(c), m.address].filter(Boolean).join(" · ")}
                     </span>
                   </button>
                   {m.type !== "call" && place && (
