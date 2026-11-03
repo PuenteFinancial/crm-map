@@ -1,10 +1,10 @@
 "use server";
 
-import { headers } from "next/headers";
+import { timingSafeEqual } from "node:crypto";
 import { redirect } from "next/navigation";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 
-export type LoginState = { step: "email" | "code"; email?: string; error?: string };
+export type LoginState = { email?: string; error?: string };
 
 async function isTeamMember(email: string) {
   const { data, error } = await createAdminClient()
@@ -23,35 +23,38 @@ async function ensureUser(email: string) {
   if (error && error.code !== "email_exists") throw error;
 }
 
-export async function sendCode(_prev: LoginState, form: FormData): Promise<LoginState> {
-  const email = String(form.get("email") ?? "").trim().toLowerCase();
-  if (!email) return { step: "email", error: "Enter your email." };
+function passcodeMatches(given: string) {
+  const expected = process.env.TEAM_PASSCODE ?? "";
+  if (!expected || given.length !== expected.length) return false;
+  return timingSafeEqual(Buffer.from(given), Buffer.from(expected));
+}
 
-  if (!(await isTeamMember(email))) {
-    return { step: "email", email, error: "That email isn't on the team list." };
+const slowDown = () => new Promise((r) => setTimeout(r, 1000));
+
+/**
+ * Sign in with a team email + the shared TEAM_PASSCODE, no email round trip. Only for a small
+ * internal team: the passcode stands in for proving you own the inbox. Supabase still issues a
+ * normal session, so RLS (team_members) applies exactly as before.
+ */
+export async function signIn(_prev: LoginState, form: FormData): Promise<LoginState> {
+  const email = String(form.get("email") ?? "").trim().toLowerCase();
+  const passcode = String(form.get("passcode") ?? "");
+  if (!email || !passcode) return { email, error: "Enter your email and the team passcode." };
+  if (!process.env.TEAM_PASSCODE) return { email, error: "Sign-in isn't set up: TEAM_PASSCODE is missing on the server." };
+
+  if (!passcodeMatches(passcode) || !(await isTeamMember(email))) {
+    await slowDown();
+    return { email, error: "That email or passcode isn't right." };
   }
 
   await ensureUser(email);
-
-  const origin = (await headers()).get("origin");
+  // Mint a one-time sign-in token server-side (nothing is emailed) and redeem it right away,
+  // which sets the session cookies for this browser.
+  const { data, error } = await createAdminClient().auth.admin.generateLink({ type: "magiclink", email });
+  if (error) return { email, error: error.message };
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithOtp({
-    email,
-    options: { emailRedirectTo: `${origin}/auth/confirm`, shouldCreateUser: false },
-  });
-  if (error) return { step: "email", email, error: error.message };
-
-  return { step: "code", email };
-}
-
-// The 6-digit code matters on phones: a home-screen app doesn't share cookies
-// with the browser the email link opens in, so the link alone can't sign it in.
-export async function verifyCode(_prev: LoginState, form: FormData): Promise<LoginState> {
-  const email = String(form.get("email") ?? "");
-  const token = String(form.get("code") ?? "").replace(/\s/g, "");
-  const supabase = await createClient();
-  const { error } = await supabase.auth.verifyOtp({ email, token, type: "email" });
-  if (error) return { step: "code", email, error: error.message };
+  const { error: verifyError } = await supabase.auth.verifyOtp({ token_hash: data.properties.hashed_token, type: "email" });
+  if (verifyError) return { email, error: verifyError.message };
   redirect("/");
 }
 

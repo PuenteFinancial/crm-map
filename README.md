@@ -14,18 +14,13 @@ Contacts on a map, "who's near this meeting?", and optimized day routes for the 
    ```sql
    insert into team_members (email, name) values ('<colton email>', 'colton');
    ```
-4. Auth settings (Supabase → Authentication):
-   - **Sign In / Providers**: turn **off** "Allow new users to sign up" and keep "Confirm email" on. The app creates team members' accounts itself, so public sign-up stays closed (otherwise anyone with the publishable key could register a team email).
-   - **URL Configuration**: set Site URL to `http://localhost:3000` (later the Vercel URL) and add `http://localhost:3000/auth/confirm` to Redirect URLs.
-   - **Email Templates → Magic Link**: include the code and a cross-browser link, so sign-in works from a home-screen app:
-     ```html
-     <h2>Sign in to crm-map</h2>
-     <p>Your code: <strong>{{ .Token }}</strong></p>
-     <p><a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email">Or tap to sign in</a></p>
-     ```
-5. `npm install && npm run dev`, then open http://localhost:3000.
+4. Auth settings (Supabase → Authentication → Sign In / Providers): turn **off** "Allow new users to sign up" and keep "Confirm email" on. The app creates team members' accounts itself, so public sign-up stays closed (otherwise anyone with the publishable key could register a team email).
+5. Set `TEAM_PASSCODE` in `.env.local` and in Vercel's environment variables. Sign-in is a team email plus this shared passcode; no email is sent, so there's no SMTP or email template to set up.
+6. `npm install && npm run dev`, then open http://localhost:3000.
 
-Only emails in `team_members` can request a sign-in code, and row-level security limits every table to those emails.
+## Sign-in
+
+Enter a `team_members` email and `TEAM_PASSCODE`. The server checks both, mints a one-time Supabase sign-in token itself (nothing is emailed) and redeems it, so you get a normal Supabase session: row-level security still limits every table to `team_members`, and the session lasts until you sign out. It's meant for a small internal team: anyone with a team email *and* the passcode can get in, so use a passcode longer than a PIN and change it (in both places) if it leaks. Wrong attempts are slowed by a second.
 
 ## Adding contacts
 
@@ -44,12 +39,8 @@ Every source goes through `ingestContact` in [src/lib/ingest.ts](src/lib/ingest.
 - **Search-brain import**: `npm run import:brain` (reads `~/Work/search-brain`; safe to re-run).
 - **Geocode backfill**: `npm run geocode:missing` geocodes anything saved with an address but no pin.
 
-## Email sign-in limits
-
-Supabase's built-in email sender allows only a couple of auth emails per hour and only delivers to members of your Supabase organization. Before more people use the app, set up custom SMTP (Authentication → Emails → SMTP Settings; a Gmail app password works) and raise the email rate limit (Authentication → Rate Limits).
-
 ## On the phone
 
-- **Install:** open the site in Safari → Share → Add to Home Screen, then open it from the icon and sign in there once (the home-screen app keeps its own login). Icons come from `scripts/make-icons.py`.
+- **Install:** open the site in Safari → Share → Add to Home Screen, then open it from the icon and sign in there once with your email and the passcode (the home-screen app keeps its own login). Icons come from `scripts/make-icons.py`.
 - **Weak signal:** `public/sw.js` (registered in production only) keeps app code cached and saves each page after it loads. If the network takes over 4 seconds, the last saved copy shows while the fresh one loads; with no signal at all, saved pages still open and the map shows tiles you've already looked at. A pill under the top bar says when you're offline or looking at older data. Saved pages are deleted whenever the login page loads or a page load gets sent to login, so they never outlive a session.
 - **Logging visits offline:** visits saved with no connection wait on the phone and sync automatically when the connection returns (retried every 30 s). Each visit carries an id made on the phone, so a retry can't create a duplicate, and records who logged it, so it only syncs from that person's session. Other edits need a connection.
