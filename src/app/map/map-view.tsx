@@ -55,7 +55,8 @@ export default function MapView({ contacts, selectedId, nearby, route, sheetColl
           geometry: { type: "Point", coordinates: [c.map_lng!, c.map_lat!] },
           properties: {
             id: c.id,
-            name: c.name,
+            // Pins are places, so label them with the business; fall back to the person.
+            label: c.company_name || c.name,
             category: c.category,
             priority: c.priority,
             visited: c.last_visit_at != null,
@@ -250,7 +251,7 @@ export default function MapView({ contacts, selectedId, nearby, route, sheetColl
           filter={["!", ["has", "point_count"]]}
           minzoom={12}
           layout={{
-            "text-field": ["get", "name"],
+            "text-field": ["get", "label"],
             "text-font": ["DIN Offc Pro Medium", "Arial Unicode MS Bold"],
             "text-size": 12,
             "text-offset": [0, 1.3],
