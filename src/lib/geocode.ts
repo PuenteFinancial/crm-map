@@ -40,6 +40,8 @@ export async function geocode(query: string): Promise<GeocodeResult | null> {
   url.searchParams.set("q", q);
   url.searchParams.set("limit", "1");
   url.searchParams.set("proximity", LA_PROXIMITY);
+  // US only: a bare "UT" otherwise resolves to Uttar Pradesh, India.
+  url.searchParams.set("country", "us");
   url.searchParams.set("access_token", token);
 
   const res = await fetch(url);
