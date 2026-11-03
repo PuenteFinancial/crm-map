@@ -20,7 +20,7 @@ Contacts on a map, "who's near this meeting?", and optimized day routes for the 
 
 ## Sign-in
 
-Enter a `team_members` email and `TEAM_PASSCODE`. The server checks both, mints a one-time Supabase sign-in token itself (nothing is emailed) and redeems it, so you get a normal Supabase session: row-level security still limits every table to `team_members`, and the session lasts until you sign out. It's meant for a small internal team: anyone with a team email *and* the passcode can get in, so use a passcode longer than a PIN and change it (in both places) if it leaks. Wrong attempts are slowed by a second.
+Enter a `team_members` email and `TEAM_PASSCODE`. The server checks both, mints a one-time Supabase sign-in token itself (nothing is emailed) and redeems it, so you get a normal Supabase session: row-level security still limits every table to `team_members`, and the session lasts until you sign out. It's meant for a small internal team: anyone with a team email *and* the passcode can get in, so use a passcode longer than a PIN and change it (in both places) if it leaks. Each wrong attempt waits a second, ten wrong attempts for an email lock it for 15 minutes (counted in the `login_failures` table, so it holds across server instances), and sign-in refuses a `TEAM_PASSCODE` shorter than 12 characters.
 
 ## Adding contacts
 
